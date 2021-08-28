@@ -22,8 +22,8 @@ cd ~
 mkdir .aws
 cd .aws
 echo [default] >> credentials
-echo aws_access_key_id=AKIAZF5DIH3HQQTJ5AN4 >> credentials
-echo aws_secret_access_key=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 >> credentials
+echo aws_access_key_id=KEY_ID >> credentials
+echo aws_secret_access_key=SECRET_KEY >> credentials
 
 # Test AWS credentials with ls
 # aws s3 ls s3://bicog-datasets/
