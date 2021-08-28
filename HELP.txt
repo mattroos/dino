@@ -1,0 +1,16 @@
+
+
+# Activate a python environment with pytorch and timm
+conda activate SiT
+
+
+# Training images should be organized in a directory structure in which a root
+# directory has class subdirectories, with images of that class in the relevant
+# subdirectory (e.g., 1000 subdirectories for ImageNet ILSVRC). Because DINO
+# training is self-supervised and does not use labels, all the images can be
+# in a single subdirectory. The path passed to the --data_path argument should
+# be that of the root directory, not the subdirectory that actually contains
+# the images.
+
+# For machine with single 8GB RTX2080 GPU, max batch size is ~24. Default set by FB is 64.
+python -m torch.distributed.launch --nproc_per_node=1 main_dino.py --arch vit_small --batch_size_per_gpu 24 --data_path /hdd/Data/tfds/downloads/manual/val --output_dir ./output
