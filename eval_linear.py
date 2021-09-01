@@ -27,8 +27,6 @@ from torchvision import models as torchvision_models
 import utils
 import vision_transformer as vits
 
-# Test comment for learning how to use pycharm
-
 def eval_linear(args):
     utils.init_distributed_mode(args)
     print("git:\n  {}\n".format(utils.get_sha()))
