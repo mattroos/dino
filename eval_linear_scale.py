@@ -29,7 +29,22 @@ import vision_transformer as vits
 
 import torchvision.transforms.functional as F
 from torchvision.transforms.functional import InterpolationMode
-import pdb
+
+# ## Just for debugging, etc...
+# import pdb
+# import numpy as np
+# import matplotlib.pyplot as plt
+# plt.ion()
+
+
+## Example shell command to start this training script:
+# python eval_linear_scale.py --data_path /Data/DairyTech/Flickr_cows_train_val_sets/ --num_workers 8 2>/dev/null
+#   The 2>/dev/null tail is to get rid of warning messages from caffe. See here:
+#   https://github.com/pytorch/pytorch/issues/57273
+
+MAX_SCALE = 1.5  # Maximum image scaling (must be greater than 1.0)
+MEAN = (0.485, 0.456, 0.406)  # ImageNet channel means
+STD = (0.229, 0.224, 0.225)   # ImageNet channel standard deviations
 
 
 def eval_linear(args):
@@ -53,10 +68,10 @@ def eval_linear(args):
         pth_transforms.ToTensor(),
         pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
-    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, "train"), transform=train_transform)
-    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, "val"), transform=train_transform)
-    dataset_train = datasets.ImageFolder('/Data/DairyTech/Flickr_cows_postprocessed/', transform=train_transform)
+    dataset_train = datasets.ImageFolder(os.path.join(args.data_path, "train"), transform=train_transform)
     dataset_val = datasets.ImageFolder(os.path.join(args.data_path, "val"), transform=val_transform)
+    # dataset_train = datasets.ImageFolder('/Data/DairyTech/Flickr_cows_postprocessed_train/', transform=train_transform)
+    # dataset_val = datasets.ImageFolder('/Data/DairyTech/Flickr_cows_postprocessed_test/', transform=train_transform)
     sampler = torch.utils.data.distributed.DistributedSampler(dataset_train)
     train_loader = torch.utils.data.DataLoader(
         dataset_train,
@@ -115,7 +130,7 @@ def eval_linear(args):
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, eta_min=0)
 
     # Optionally resume from a checkpoint
-    to_restore = {"epoch": 0, "best_acc": 0.}
+    to_restore = {"epoch": 0, "best_loss": 1000., "epoch_best_loss": -1}
     utils.restart_from_checkpoint(
         os.path.join(args.output_dir, "checkpoint.pth.tar"),
         run_variables=to_restore,
@@ -124,23 +139,30 @@ def eval_linear(args):
         scheduler=scheduler,
     )
     start_epoch = to_restore["epoch"]
-    best_acc = to_restore["best_acc"]
+    best_loss = to_restore["best_loss"]
+    epoch_best_loss = to_restore["epoch_best_loss"]
 
     for epoch in range(start_epoch, args.epochs):
         train_loader.sampler.set_epoch(epoch)
 
+        print('')
         train_stats = train(model, linear_estimator, optimizer, train_loader, epoch, args.n_last_blocks, args.avgpool_patchtokens)
         scheduler.step()
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      'epoch': epoch}
+
         if epoch % args.val_freq == 0 or epoch == args.epochs - 1:
+            print('')
             test_stats = validate_network(val_loader, model, linear_estimator, args.n_last_blocks, args.avgpool_patchtokens)
-            print(f"Accuracy at epoch {epoch} of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
-            best_acc = max(best_acc, test_stats["acc1"])
-            print(f'Max accuracy so far: {best_acc:.2f}%')
+            print(f"Loss at epoch {epoch} of the network on the {len(dataset_val)} test images: {test_stats['loss']:.3e}")
+            if test_stats["loss"] < best_loss:
+                epoch_best_loss = epoch
+            best_loss = min(best_loss, test_stats["loss"])
+            print(f'Lowest loss so far: {best_loss:.3e} at epoch {epoch_best_loss}')
             log_stats = {**{k: v for k, v in log_stats.items()},
                          **{f'test_{k}': v for k, v in test_stats.items()}}
+
         if utils.is_main_process():
             with (Path(args.output_dir) / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
@@ -149,11 +171,13 @@ def eval_linear(args):
                 "state_dict": linear_estimator.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "scheduler": scheduler.state_dict(),
-                "best_acc": best_acc,
+                "best_loss": best_loss,
+                "epoch_best_loss": epoch_best_loss,
             }
             torch.save(save_dict, os.path.join(args.output_dir, "checkpoint.pth.tar"))
-    print("Training of the supervised linear classifier on frozen features completed.\n"
-                "Top-1 test accuracy: {acc:.1f}".format(acc=best_acc))
+
+    print("Training of the supervised linear estimator on frozen features completed.\n"
+                "Lowest test loss: {loss:.3e}".format(loss=best_loss))
 
 
 def scale_batch(imgs, max_scale):
@@ -169,6 +193,22 @@ def scale_batch(imgs, max_scale):
     return imgs_scaled, scale_actual
 
 
+def compute_loss(scale1, scale2, scale_est1, scale_est2):
+    # The head must produce an estimate of the scale. However, there is no meaningful
+    # units of scale, so the loss function is based on the ratio of the scales for
+    # two images that are otherwise identical. Taking the log of the ratio will give
+    # ground truth values that are symmetrically centered about zero.
+    # What is the proper loss fuction, however? MSE? The distribution is reminiscent
+    # of Gaussian, so something specialized for that? Or perhaps something that
+    # weights outliers so the model doesn't get stuck just guessing the same scale
+    # value for each image?
+    bias = 0.0
+    ratio_pred = (scale_est1+bias)/(scale_est2+bias)
+    ratio_gt = torch.full(scale_est1.shape, (scale1+bias)/(scale2+bias)).cuda()
+    loss = torch.nn.functional.mse_loss(ratio_pred, ratio_gt)
+    return loss
+
+
 def train(model, linear_estimator, optimizer, loader, epoch, n, avgpool):
     linear_estimator.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -176,15 +216,8 @@ def train(model, linear_estimator, optimizer, loader, epoch, n, avgpool):
     header = 'Epoch: [{}]'.format(epoch)
     for (inp, target) in metric_logger.log_every(loader, 20, header):
 
-        import numpy as np
-        import matplotlib.pyplot as plt
-        plt.ion()
-        MEAN = (0.485, 0.456, 0.406)
-        STD = (0.229, 0.224, 0.225)
-
-        max_scale = 1.5
-        inp1, scale1 = scale_batch(inp, max_scale)
-        inp2, scale2 = scale_batch(inp, max_scale)
+        inp1, scale1 = scale_batch(inp, MAX_SCALE)
+        inp2, scale2 = scale_batch(inp, MAX_SCALE)
 
         # for i in range(args.batch_size_per_gpu):
         #     x = np.transpose(inp1[i,:,:,:].numpy(), (1, 2, 0)) * STD + MEAN
@@ -223,23 +256,8 @@ def train(model, linear_estimator, optimizer, loader, epoch, n, avgpool):
         scale_est1 = linear_estimator(out1)
         scale_est2 = linear_estimator(out2)
 
-        # # compute cross entropy loss
-        # loss = nn.CrossEntropyLoss()(output, target)
-
-        ## Comute a loss
-        # The head must produce an estimate of the scale. However, there is no meaningful
-        # units of scale, so the loss function is based on the ratio of the scales for
-        # two images that are otherwise identical. Taking the log of the ratio will give
-        # ground truth values that are symmetrically centered about zero.
-        # What is the proper loss fuction, however? MSE? The distribution is reminiscent
-        # of Gaussian, so something specialized for that? Or perhaps something that
-        # weights outliers so the model doesn't get stuck just guessing the same scale
-        # value for each image?
-        pdb.set_trace()
-        loss = torch.nn.functional.mse_loss(torch.log(scale_est1/(scale_est2+1e10)), torch.log(scale1/scale2))
-
-        # torch.log(scale_est1)
-
+        # Compute loss
+        loss = compute_loss(scale1, scale2, scale_est1, scale_est2)
 
         # compute the gradients
         optimizer.zero_grad()
@@ -252,24 +270,30 @@ def train(model, linear_estimator, optimizer, loader, epoch, n, avgpool):
         torch.cuda.synchronize()
         metric_logger.update(loss=loss.item())
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
+    print("Averaged train stats:", metric_logger)
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
 @torch.no_grad()
-def validate_network(val_loader, model, linear_classifier, n, avgpool):
-    linear_classifier.eval()
+def validate_network(val_loader, model, linear_estimator, n, avgpool):
+    linear_estimator.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     for inp, target in metric_logger.log_every(val_loader, 20, header):
+
+        inp1, scale1 = scale_batch(inp, MAX_SCALE)
+        inp2, scale2 = scale_batch(inp, MAX_SCALE)
+
         # move to gpu
-        inp = inp.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
+        inp1 = inp1.cuda(non_blocking=True)
+        inp2 = inp2.cuda(non_blocking=True)
 
         # forward
-        with torch.no_grad():
+        outputs = []
+        for inp in [inp1, inp2]:
             if "vit" in args.arch:
                 intermediate_output = model.get_intermediate_layers(inp, n)
                 output = [x[:, 0] for x in intermediate_output]
@@ -278,25 +302,17 @@ def validate_network(val_loader, model, linear_classifier, n, avgpool):
                 output = torch.cat(output, dim=-1)
             else:
                 output = model(inp)
-        output = linear_classifier(output)
-        loss = nn.CrossEntropyLoss()(output, target)
+            outputs.append(output)
+        out1, out2 = outputs
+        scale_est1 = linear_estimator(out1)
+        scale_est2 = linear_estimator(out2)
 
-        if linear_classifier.module.num_labels >= 5:
-            acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
-        else:
-            acc1, = utils.accuracy(output, target, topk=(1,))
+        # Compute loss
+        loss = compute_loss(scale1, scale2, scale_est1, scale_est2)
 
-        batch_size = inp.shape[0]
         metric_logger.update(loss=loss.item())
-        metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
-        if linear_classifier.module.num_labels >= 5:
-            metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
-    if linear_classifier.module.num_labels >= 5:
-        print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
-          .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
-    else:
-        print('* Acc@1 {top1.global_avg:.3f} loss {losses.global_avg:.3f}'
-          .format(top1=metric_logger.acc1, losses=metric_logger.loss))
+
+    print("Averaged val stats:  ", metric_logger)
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
@@ -325,13 +341,16 @@ class LinearEstimator(nn.Module):
         self.linear = nn.Linear(dim, num_outputs)
         self.linear.weight.data.normal_(mean=0.0, std=0.01)
         self.linear.bias.data.zero_()
+        # self.activation = nn.Sigmoid()
+        # self.activation = nn.ReLU()
+        self.activation = nn.Softplus()
 
     def forward(self, x):
         # flatten
         x = x.view(x.size(0), -1)
 
-        # linear layer
-        return self.linear(x)
+        # Layer(s)
+        return self.activation(self.linear(x))
 
 
 if __name__ == '__main__':
