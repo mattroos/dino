@@ -19,16 +19,31 @@ def plot(args):
     dicts = [json.loads(l) for l in lines]
 
 
-    # Plot the data
-    keys = dicts[0].keys()
-    n_keys = len(keys)
-    plt.figure(1, figsize=(8, 1.5*n_keys))
-    for i, k in enumerate(keys):
-        values = [d[k] for d in dicts]
-        plt.subplot(n_keys, 1, i+1)
-        plt.plot(values)
-        plt.ylabel(k)
-        plt.grid(True)
+    # # Plot the data
+    # keys = dicts[0].keys()
+    # n_keys = len(keys)
+    # plt.figure(1, figsize=(8, 1.5*n_keys))
+    # for i, k in enumerate(keys):
+    #     values = [d[k] for d in dicts]
+    #     plt.subplot(n_keys, 1, i+1)
+    #     plt.plot(values)
+    #     plt.ylabel(k)
+    #     plt.grid(True)
+
+    plt.figure(1)
+
+    train_loss = [d['train_loss'] for d in dicts]
+    test_loss = [d['test_loss'] for d in dicts]
+    plt.subplot(2, 1, 1)
+    plt.plot(train_loss, label='train_loss')
+    plt.plot(test_loss, label='test_loss')
+    plt.legend()
+    plt.grid(True)
+
+    train_lr = [d['train_lr'] for d in dicts]
+    plt.subplot(2, 1, 2)
+    plt.plot(train_lr, label='train_lr')
+    plt.grid(True)
 
 
 if __name__ == '__main__':
