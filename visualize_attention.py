@@ -95,6 +95,16 @@ def display_instances(image, mask, fname="test", figsize=(5, 5), blur=False, con
     return
 
 
+# python visualize_attention.py \
+# --arch vit_base \
+# --patch_size 8 \
+# --image_path /Data/DairyTech/Flickr_cows_train_val_sets/val/dummy/black_angus-04c18fb182d2ef992201a657e66f497b1a83f79cf6cac4c056c4cc3d63688ba9.jpg \
+# --output_dir ./attention_maps \
+# --image_size 480
+# --threshold 60
+
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
     parser.add_argument('--arch', default='vit_small', type=str,
