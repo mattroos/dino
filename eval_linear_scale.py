@@ -69,8 +69,8 @@ def eval_linear(args):
     ])
     dataset_train = datasets.ImageFolder(os.path.join(args.data_path, "train"), transform=train_transform)
     dataset_val = datasets.ImageFolder(os.path.join(args.data_path, "val"), transform=val_transform)
-    # dataset_train = datasets.ImageFolder('/Data/DairyTech/Flickr_cows_postprocessed_train/', transform=train_transform)
-    # dataset_val = datasets.ImageFolder('/Data/DairyTech/Flickr_cows_postprocessed_test/', transform=train_transform)
+    # dataset_train = datasets.ImageFolder(args.data_path, transform=train_transform)
+    # dataset_val = datasets.ImageFolder(args.data_path, transform=val_transform)
     sampler = torch.utils.data.distributed.DistributedSampler(dataset_train)
     train_loader = torch.utils.data.DataLoader(
         dataset_train,
@@ -338,6 +338,10 @@ def visualize_predictions(loader, model, linear_estimator, n, avgpool):
 
         inp1, scale1 = scale_batch(inp, MAX_SCALE)
         inp2, scale2 = scale_batch(inp, MAX_SCALE)
+        # inp1 = torch.clone(inp)
+        # inp2 = torch.clone(inp)
+        # scale1 = 1.0
+        # scale2 = 1.0
 
         # move to gpu
         inp1 = inp1.cuda(non_blocking=True)
@@ -369,19 +373,21 @@ def visualize_predictions(loader, model, linear_estimator, n, avgpool):
         inp1 = np.clip(inp1, 0, 1)  # values may yet bet out of range due to numerical precision, so clip
         inp2 = np.clip(inp2, 0, 1)  # values may yet bet out of range due to numerical precision, so clip
 
-        # Plot 4 images pairs from this batch
+        # Plot n_pairs images pairs from this batch
+        n_pairs = 4
         fig = plt.figure(1, figsize=(6, 10))
         plt.clf()
         fig.suptitle(f'scale1={scale1:0.2f}, scale2={scale2:0.2f}, ratio={scale1/scale2:0.2f}')
-        for i in range(4):
-            plt.subplot(4, 2, 2*i+1)
+        for i in range(n_pairs):
+            plt.subplot(n_pairs, 2, 2*i+1)
             plt.imshow(inp1[i])
             plt.title(f'pred={scale_est1[i]:0.2f}, ratio={scale_est1[i]/scale_est2[i]:0.2f}')
             plt.axis('off')
-            plt.subplot(4, 2, 2*i+2)
+            plt.subplot(n_pairs, 2, 2*i+2)
             plt.imshow(inp2[i])
             plt.title(f'pred={scale_est2[i]:0.2f}, ratio={scale_est1[i]/scale_est2[i]:0.2f}')
             plt.axis('off')
+        # print(scale_est1)
         plt.waitforbuttonpress()
 
 
@@ -451,3 +457,7 @@ if __name__ == '__main__':
     parser.add_argument('--view_dataset', default='val', type=str, help='If visualizing results, specifies whether to use "train" or "va" dataset')
     args = parser.parse_args()
     eval_linear(args)
+
+
+# Command to visualize validation data:
+# python eval_linear_scale.py --data_path /Data/DairyTech/Flickr_cows_train_val_sets/ --num_workers 8 --view True
