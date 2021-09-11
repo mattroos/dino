@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import sys
 import argparse
 import json
 from pathlib import Path
@@ -30,11 +31,9 @@ import vision_transformer as vits
 import torchvision.transforms.functional as F
 from torchvision.transforms.functional import InterpolationMode
 
-# ## Just for debugging, etc...
-# import pdb
-# import numpy as np
-# import matplotlib.pyplot as plt
-# plt.ion()
+import numpy as np
+import matplotlib.pyplot as plt
+plt.ion()
 
 
 ## Example shell command to start this training script:
@@ -88,7 +87,7 @@ def eval_linear(args):
     )
     print(f"Data loaded with {len(dataset_train)} train and {len(dataset_val)} val imgs.")
 
-    # ============ building network ... ============
+    # ============ building ViT network ... ============
     # if the network is a Vision Transformer (i.e. vit_tiny, vit_small, vit_base)
     if args.arch in vits.__dict__.keys():
         model = vits.__dict__[args.arch](patch_size=args.patch_size, num_classes=0)
@@ -111,13 +110,26 @@ def eval_linear(args):
     utils.load_pretrained_weights(model, args.pretrained_weights, args.checkpoint_key, args.arch, args.patch_size)
     print(f"Model {args.arch} built.")
 
-    # linear_classifier = LinearClassifier(embed_dim, num_labels=args.num_labels)
-    # linear_classifier = linear_classifier.cuda()
-    # linear_classifier = nn.parallel.DistributedDataParallel(linear_classifier, device_ids=[args.gpu])
-
+    # ============ building head network ... ============
     linear_estimator = LinearEstimator(embed_dim, num_outputs=1)
     linear_estimator = linear_estimator.cuda()
     linear_estimator = nn.parallel.DistributedDataParallel(linear_estimator, device_ids=[args.gpu])
+
+
+    # If only visualizing for existing model, do it...
+    if args.view:
+        to_restore = {"epoch": 0, "best_loss": 1000., "epoch_best_loss": -1}
+        utils.restart_from_checkpoint(
+            os.path.join(args.output_dir, "checkpoint.pth.tar"),
+            state_dict=linear_estimator,
+        )
+        # Visualize
+        assert args.view_dataset in ['train', 'val']
+        if args.view_dataset=='train':
+            visualize_predictions(train_loader, model, linear_estimator, args.n_last_blocks, args.avgpool_patchtokens)
+        else:
+            visualize_predictions(val_loader, model, linear_estimator, args.n_last_blocks, args.avgpool_patchtokens)
+        sys.exit()
 
 
     # set optimizer
@@ -316,6 +328,63 @@ def validate_network(val_loader, model, linear_estimator, n, avgpool):
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
+@torch.no_grad()
+def visualize_predictions(loader, model, linear_estimator, n, avgpool):
+    linear_estimator.eval()
+    metric_logger = utils.MetricLogger(delimiter="  ")
+    header = 'Visualize:'
+    print('\nShowing four image pairs per batch. Click on the figure to go to next batch.\n')
+    for inp, target in metric_logger.log_every(loader, 1, header):
+
+        inp1, scale1 = scale_batch(inp, MAX_SCALE)
+        inp2, scale2 = scale_batch(inp, MAX_SCALE)
+
+        # move to gpu
+        inp1 = inp1.cuda(non_blocking=True)
+        inp2 = inp2.cuda(non_blocking=True)
+
+        # forward
+        outputs = []
+        for inp in [inp1, inp2]:
+            if "vit" in args.arch:
+                intermediate_output = model.get_intermediate_layers(inp, n)
+                output = [x[:, 0] for x in intermediate_output]
+                if avgpool:
+                    output.append(torch.mean(intermediate_output[-1][:, 1:], dim=1))
+                output = torch.cat(output, dim=-1)
+            else:
+                output = model(inp)
+            outputs.append(output)
+        out1, out2 = outputs
+        scale_est1 = linear_estimator(out1).cpu().numpy()[:,0]
+        scale_est2 = linear_estimator(out2).cpu().numpy()[:,0]
+
+        # Convert back to numpy and 0.0 to 1.0 colorscale
+        inp1 = inp1.cpu().numpy()
+        inp2 = inp2.cpu().numpy()
+        inp1 = inp1 * np.reshape(STD, (1, 3, 1, 1)) + np.reshape(MEAN, (1, 3, 1, 1))
+        inp2 = inp2 * np.reshape(STD, (1, 3, 1, 1)) + np.reshape(MEAN, (1, 3, 1, 1))
+        inp1 = np.transpose(inp1, (0, 2, 3, 1))
+        inp2 = np.transpose(inp2, (0, 2, 3, 1))
+        inp1 = np.clip(inp1, 0, 1)  # values may yet bet out of range due to numerical precision, so clip
+        inp2 = np.clip(inp2, 0, 1)  # values may yet bet out of range due to numerical precision, so clip
+
+        # Plot 4 images pairs from this batch
+        fig = plt.figure(1, figsize=(6, 10))
+        plt.clf()
+        fig.suptitle(f'scale1={scale1:0.2f}, scale2={scale2:0.2f}, ratio={scale1/scale2:0.2f}')
+        for i in range(4):
+            plt.subplot(4, 2, 2*i+1)
+            plt.imshow(inp1[i])
+            plt.title(f'pred={scale_est1[i]:0.2f}, ratio={scale_est1[i]/scale_est2[i]:0.2f}')
+            plt.axis('off')
+            plt.subplot(4, 2, 2*i+2)
+            plt.imshow(inp2[i])
+            plt.title(f'pred={scale_est2[i]:0.2f}, ratio={scale_est1[i]/scale_est2[i]:0.2f}')
+            plt.axis('off')
+        plt.waitforbuttonpress()
+
+
 class LinearClassifier(nn.Module):
     """Linear layer to train on top of frozen features"""
     def __init__(self, dim, num_labels=1000):
@@ -378,5 +447,7 @@ if __name__ == '__main__':
     parser.add_argument('--val_freq', default=1, type=int, help="Epoch frequency for validation.")
     parser.add_argument('--output_dir', default=".", help='Path to save logs and checkpoints')
     parser.add_argument('--num_labels', default=1000, type=int, help='Number of labels for linear classifier')
+    parser.add_argument('--view', default=False, type=utils.bool_flag, help='Load trained linear head and visualize results')
+    parser.add_argument('--view_dataset', default='val', type=str, help='If visualizing results, specifies whether to use "train" or "va" dataset')
     args = parser.parse_args()
     eval_linear(args)
