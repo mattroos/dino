@@ -132,6 +132,10 @@ def eval_linear(args):
         sys.exit()
 
 
+    # Create output directory, if needed
+    if not os.path.exists(args.output_dir):
+        os.mkdir(args.output_dir)
+
     # set optimizer
     optimizer = torch.optim.SGD(
         linear_estimator.parameters(),
@@ -457,6 +461,7 @@ if __name__ == '__main__':
     parser.add_argument('--view_dataset', default='val', type=str, help='If visualizing results, specifies whether to use "train" or "va" dataset')
     args = parser.parse_args()
     eval_linear(args)
+
 
 
 # Command to visualize validation data:
