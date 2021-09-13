@@ -28,10 +28,8 @@
 # parser.add_argument('--view_dataset', default='val', type=str, help='If visualizing results, specifies whether to use "train" or "va" dataset')
 
 
-
 # Current number of training samples is 7544. Try to choose batch size such that it divides evenly?
 # Current number of test samples is 838. Try to choose batch size such that it divides evenly?
-
 
 
 ## Train head on top of ViT-small
