@@ -28,6 +28,12 @@
 # parser.add_argument('--view_dataset', default='val', type=str, help='If visualizing results, specifies whether to use "train" or "va" dataset')
 
 
+
+# Current number of training samples is 7544. Try to choose batch size such that it divides evenly?
+# Current number of test samples is 838. Try to choose batch size such that it divides evenly?
+
+
+
 ## Train head on top of ViT-small
 python eval_linear_scale.py \
 --arch vit_small \
@@ -47,7 +53,7 @@ python eval_linear_scale.py \
 --n_last_blocks 1 \
 --patch_size 8 \
 --avgpool_patchtokens True \
---batch_size_per_gpu 80 \
+--batch_size_per_gpu 64 \
 --data_path /Data/DairyTech/Flickr_cows_train_val_sets/ \
 --num_workers 8 \
 --output_dir ./scale_head_base_linear \
