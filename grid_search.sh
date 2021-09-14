@@ -9,7 +9,7 @@ cd $WORK_DIR
 declare -a N_LAYERS=("1" "2")
 # declare -a N_NODES=("40" "400")
 declare -a N_NODES=("40")
-declare -a HIDDEN_ACT=("gelu", "relu")
+declare -a HIDDEN_ACT=("gelu" "relu")
 
 for n_layers in "${N_LAYERS[@]}"
 do
