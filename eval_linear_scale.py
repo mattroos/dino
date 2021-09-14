@@ -111,9 +111,14 @@ def eval_linear(args):
     print(f"Model {args.arch} built.")
 
     # ============ building head network ... ============
-    linear_estimator = LinearEstimator(embed_dim, num_outputs=1)
-    linear_estimator = linear_estimator.cuda()
-    linear_estimator = nn.parallel.DistributedDataParallel(linear_estimator, device_ids=[args.gpu])
+    if args.head_type=='linear':
+        head_estimator = LinearEstimator(embed_dim, args)
+    elif args.head_type=='mlp':
+        head_estimator = MlpEstimator(embed_dim, args)
+    else:
+        raise Exception(f'Unknown head_type argument: {args.head_type}')
+    head_estimator = head_estimator.cuda()
+    head_estimator = nn.parallel.DistributedDataParallel(head_estimator, device_ids=[args.gpu])
 
 
     # If only visualizing for existing model, do it...
@@ -121,14 +126,14 @@ def eval_linear(args):
         to_restore = {"epoch": 0, "best_loss": 1000., "epoch_best_loss": -1}
         utils.restart_from_checkpoint(
             os.path.join(args.output_dir, "checkpoint.pth.tar"),
-            state_dict=linear_estimator,
+            state_dict=head_estimator,
         )
         # Visualize
         assert args.view_dataset in ['train', 'val']
         if args.view_dataset=='train':
-            visualize_predictions(train_loader, model, linear_estimator, args.n_last_blocks, args.avgpool_patchtokens)
+            visualize_predictions(train_loader, model, head_estimator, args.n_last_blocks, args.avgpool_patchtokens)
         else:
-            visualize_predictions(val_loader, model, linear_estimator, args.n_last_blocks, args.avgpool_patchtokens)
+            visualize_predictions(val_loader, model, head_estimator, args.n_last_blocks, args.avgpool_patchtokens)
         sys.exit()
 
 
@@ -138,7 +143,7 @@ def eval_linear(args):
 
     # set optimizer
     optimizer = torch.optim.SGD(
-        linear_estimator.parameters(),
+        head_estimator.parameters(),
         args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 256., # linear scaling rule
         momentum=0.9,
         weight_decay=0, # we do not apply weight decay
@@ -150,7 +155,7 @@ def eval_linear(args):
     utils.restart_from_checkpoint(
         os.path.join(args.output_dir, "checkpoint.pth.tar"),
         run_variables=to_restore,
-        state_dict=linear_estimator,
+        state_dict=head_estimator,
         optimizer=optimizer,
         scheduler=scheduler,
     )
@@ -162,7 +167,7 @@ def eval_linear(args):
         train_loader.sampler.set_epoch(epoch)
 
         print('')
-        train_stats = train(model, linear_estimator, optimizer, train_loader, epoch, args.n_last_blocks, args.avgpool_patchtokens)
+        train_stats = train(model, head_estimator, optimizer, train_loader, epoch, args.n_last_blocks, args.avgpool_patchtokens)
         scheduler.step()
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
@@ -170,7 +175,7 @@ def eval_linear(args):
 
         if epoch % args.val_freq == 0 or epoch == args.epochs - 1:
             print('')
-            test_stats = validate_network(val_loader, model, linear_estimator, args.n_last_blocks, args.avgpool_patchtokens)
+            test_stats = validate_network(val_loader, model, head_estimator, args.n_last_blocks, args.avgpool_patchtokens)
             print(f"Loss at epoch {epoch} of the network on the {len(dataset_val)} test images: {test_stats['loss']:.3e}")
             if test_stats["loss"] < best_loss:
                 epoch_best_loss = epoch
@@ -184,7 +189,7 @@ def eval_linear(args):
                 f.write(json.dumps(log_stats) + "\n")
             save_dict = {
                 "epoch": epoch + 1,
-                "state_dict": linear_estimator.state_dict(),
+                "state_dict": head_estimator.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "scheduler": scheduler.state_dict(),
                 "best_loss": best_loss,
@@ -192,7 +197,7 @@ def eval_linear(args):
             }
             torch.save(save_dict, os.path.join(args.output_dir, "checkpoint.pth.tar"))
 
-    print("Training of the supervised linear estimator on frozen features completed.\n"
+    print("Training of the supervised estimator on frozen features completed.\n"
                 "Lowest test loss: {loss:.3e}".format(loss=best_loss))
 
 
@@ -225,8 +230,8 @@ def compute_loss(scale1, scale2, scale_est1, scale_est2):
     return loss
 
 
-def train(model, linear_estimator, optimizer, loader, epoch, n, avgpool):
-    linear_estimator.train()
+def train(model, head_estimator, optimizer, loader, epoch, n, avgpool):
+    head_estimator.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
@@ -269,8 +274,8 @@ def train(model, linear_estimator, optimizer, loader, epoch, n, avgpool):
                     output = model(inp)
                 outputs.append(output)
         out1, out2 = outputs
-        scale_est1 = linear_estimator(out1)
-        scale_est2 = linear_estimator(out2)
+        scale_est1 = head_estimator(out1)
+        scale_est2 = head_estimator(out2)
 
         # Compute loss
         loss = compute_loss(scale1, scale2, scale_est1, scale_est2)
@@ -294,8 +299,8 @@ def train(model, linear_estimator, optimizer, loader, epoch, n, avgpool):
 
 
 @torch.no_grad()
-def validate_network(val_loader, model, linear_estimator, n, avgpool):
-    linear_estimator.eval()
+def validate_network(val_loader, model, head_estimator, n, avgpool):
+    head_estimator.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
     for inp, target in metric_logger.log_every(val_loader, 20, header):
@@ -320,8 +325,8 @@ def validate_network(val_loader, model, linear_estimator, n, avgpool):
                 output = model(inp)
             outputs.append(output)
         out1, out2 = outputs
-        scale_est1 = linear_estimator(out1)
-        scale_est2 = linear_estimator(out2)
+        scale_est1 = head_estimator(out1)
+        scale_est2 = head_estimator(out2)
 
         # Compute loss
         loss = compute_loss(scale1, scale2, scale_est1, scale_est2)
@@ -333,8 +338,8 @@ def validate_network(val_loader, model, linear_estimator, n, avgpool):
 
 
 @torch.no_grad()
-def visualize_predictions(loader, model, linear_estimator, n, avgpool):
-    linear_estimator.eval()
+def visualize_predictions(loader, model, head_estimator, n, avgpool):
+    head_estimator.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Visualize:'
     print('\nShowing four image pairs per batch. Click on the figure to go to next batch.\n')
@@ -364,8 +369,8 @@ def visualize_predictions(loader, model, linear_estimator, n, avgpool):
                 output = model(inp)
             outputs.append(output)
         out1, out2 = outputs
-        scale_est1 = linear_estimator(out1).cpu().numpy()[:,0]
-        scale_est2 = linear_estimator(out2).cpu().numpy()[:,0]
+        scale_est1 = head_estimator(out1).cpu().numpy()[:,0]
+        scale_est2 = head_estimator(out2).cpu().numpy()[:,0]
 
         # Convert back to numpy and 0.0 to 1.0 colorscale
         inp1 = inp1.cpu().numpy()
@@ -379,6 +384,7 @@ def visualize_predictions(loader, model, linear_estimator, n, avgpool):
 
         # Plot n_pairs images pairs from this batch
         n_pairs = 4
+        # n_pairs = 11
         fig = plt.figure(1, figsize=(6, 10))
         plt.clf()
         fig.suptitle(f'scale1={scale1:0.2f}, scale2={scale2:0.2f}, ratio={scale1/scale2:0.2f}')
@@ -414,15 +420,18 @@ class LinearClassifier(nn.Module):
 
 class LinearEstimator(nn.Module):
     """Linear layer to train on top of frozen features"""
-    def __init__(self, dim, num_outputs=1):
+    def __init__(self, dim, args):
         super(LinearEstimator, self).__init__()
-        self.num_outputs = num_outputs
-        self.linear = nn.Linear(dim, num_outputs)
+        activations = {
+            'relu': nn.ReLU(),
+            'sigmoid': nn.Sigmoid(),
+            'tanh': nn.Tanh(),
+            'softplus': nn.Softplus(),
+        }
+        self.linear = nn.Linear(dim, 1)
         self.linear.weight.data.normal_(mean=0.0, std=0.01)
         self.linear.bias.data.zero_()
-        # self.activation = nn.Sigmoid()
-        # self.activation = nn.ReLU()
-        self.activation = nn.Softplus()
+        self.activation = activations[args.output_act]
 
     def forward(self, x):
         # flatten
@@ -430,6 +439,44 @@ class LinearEstimator(nn.Module):
 
         # Layer(s)
         return self.activation(self.linear(x))
+
+
+class MlpEstimator(nn.Module):
+    """MLP to train on top of frozen features"""
+    def __init__(self, dim, args):
+        super(MlpEstimator, self).__init__()
+        activations = {
+            'relu': nn.ReLU(),
+            'sigmoid': nn.Sigmoid(),
+            'tanh': nn.Tanh(),
+            'softplus': nn.Softplus(),
+        }
+        self.hidden = [nn.Linear(dim, args.n_hidden_nodes)]
+        self.hidden[0].weight.data.normal_(mean=0.0, std=0.01)
+        self.hidden[0].bias.data.zero_()
+
+        for i in range(1, args.n_hidden_layers):
+            self.hidden.append(nn.Linear(args.n_hidden_nodes, args.n_hidden_nodes))
+            self.hidden[-1].weight.data.normal_(mean=0.0, std=0.01)
+            self.hidden[-1].bias.data.zero_()
+
+        self.hidden = nn.ModuleList(self.hidden)  # Need so all layers will be moved to GPU when calling model.cuda()
+
+        self.output = nn.Linear(args.n_hidden_nodes, 1)
+        self.output.weight.data.normal_(mean=0.0, std=0.01)
+        self.output.bias.data.zero_()
+
+        self.output_act = activations[args.output_act]
+        self.hidden_act = activations[args.hidden_act]
+
+    def forward(self, x):
+        # flatten
+        x = x.view(x.size(0), -1)
+
+        # Layer(s)
+        for i in range(args.n_hidden_layers):
+            x = self.hidden_act(self.hidden[i](x))
+        return self.output_act(self.output(x))
 
 
 if __name__ == '__main__':
@@ -457,6 +504,13 @@ if __name__ == '__main__':
     parser.add_argument('--val_freq', default=1, type=int, help="Epoch frequency for validation.")
     parser.add_argument('--output_dir', default=".", help='Path to save logs and checkpoints')
     parser.add_argument('--num_labels', default=1000, type=int, help='Number of labels for linear classifier')
+
+    parser.add_argument('--head_type', default='linear', type=str, help='Linear or mlp')
+    parser.add_argument('--output_act', default='softplus', type=str, help='Activation of head model final layer')
+    parser.add_argument('--hidden_act', default='relu', type=str, help='Activation of head model hidden layers')
+    parser.add_argument('--n_hidden_layers', default=1, type=int, help='Number of hidden layers, if using MLP head model')
+    parser.add_argument('--n_hidden_nodes', default=40, type=int, help='Number of nodes per hidden layers, if using MLP head model')
+
     parser.add_argument('--view', default=False, type=utils.bool_flag, help='Load trained linear head and visualize results')
     parser.add_argument('--view_dataset', default='val', type=str, help='If visualizing results, specifies whether to use "train" or "va" dataset')
     args = parser.parse_args()
@@ -466,3 +520,53 @@ if __name__ == '__main__':
 
 # Command to visualize validation data:
 # python eval_linear_scale.py --data_path /Data/DairyTech/Flickr_cows_train_val_sets/ --num_workers 8 --view True
+
+
+# python eval_linear_scale.py --data_path /Data/DairyTech/scaled_sets/test_sample/ --num_workers 8 --view True
+
+
+# python eval_linear_scale.py \
+# --arch vit_base \
+# --n_last_blocks 1 \
+# --patch_size 8 \
+# --avgpool_patchtokens True \
+# --batch_size_per_gpu 32 \
+# --data_path /Data/DairyTech/Flickr_cows_train_val_sets/ \
+# --num_workers 8 \
+# --output_dir ./scale_head_base_linear \
+# --view True
+
+
+# python eval_linear_scale.py \
+# --arch vit_small \
+# --n_last_blocks 4 \
+# --patch_size 16 \
+# --avgpool_patchtokens False \
+# --batch_size_per_gpu 128 \
+# --data_path /Data/DairyTech/Flickr_cows_train_val_sets/ \
+# --num_workers 8 \
+# --head_type mlp \
+# --output_act softplus \
+# --hidden_act relu \
+# --n_hidden_layers 1 \
+# --n_hidden_nodes 40 \
+# --output_dir ./scale_head_small_mlp_L1_N40 \
+# 2>/dev/null
+
+
+# python eval_linear_scale.py \
+# --arch vit_small \
+# --n_last_blocks 4 \
+# --patch_size 16 \
+# --avgpool_patchtokens False \
+# --batch_size_per_gpu 32 \
+# --data_path /Data/DairyTech/Flickr_cows_train_val_sets/ \
+# --num_workers 8 \
+# --head_type linear \
+# --output_act softplus \
+# --hidden_act relu \
+# --n_hidden_layers 1 \
+# --n_hidden_nodes 40 \
+# --output_dir ./temp \
+
+

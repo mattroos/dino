@@ -85,9 +85,10 @@ cd /workspace/dino
 # --output_dir ./scale_head_small_linear \
 # 2>/dev/null
 
-# Tar and copy results to AWS S3
-tar -cvf scale_head_small_linear.tar /workspace/dino/scale_head_small_linear
-aws s3 cp scale_head_small_linear.tar s3://bicog-datasets/cows/scale_head_small_linear.tar
+# # Tar and copy results to AWS S3
+# tar -cvf scale_head_small_linear.tar /workspace/dino/scale_head_small_linear
+# aws s3 cp scale_head_small_linear.tar s3://bicog-datasets/cows/scale_head_small_linear.tar
+
 
 # ## Train head on top of ViT-base
 # python -m torch.distributed.launch --nproc_per_node=4 eval_linear_scale.py \
@@ -101,11 +102,51 @@ aws s3 cp scale_head_small_linear.tar s3://bicog-datasets/cows/scale_head_small_
 # --output_dir ./scale_head_base_linear \
 # 2>/dev/null
 
+# # Tar and copy results to AWS S3
+# tar -cvf scale_head_base_linear.tar /workspace/dino/scale_head_base_linear
+# aws s3 cp scale_head_base_linear.tar s3://bicog-datasets/cows/scale_head_base_linear.tar
+
+
+## Train MLP head on top of ViT-small
+python -m torch.distributed.launch --nproc_per_node=4 eval_linear_scale.py \
+--arch vit_small \
+--n_last_blocks 4 \
+--patch_size 16 \
+--avgpool_patchtokens False \
+--batch_size_per_gpu 256 \
+--data_path /workspace/Downloads/Flickr_cows_train_val_sets/ \
+--num_workers 8 \
+--head_type mlp \
+--output_act softplus \
+--hidden_act relu \
+--n_hidden_layers 1 \
+--n_hidden_nodes 40 \
+--output_dir ./scale_head_small_mlp_L1_N40 \
+2>/dev/null
+
 # Tar and copy results to AWS S3
-tar -cvf scale_head_base_linear.tar /workspace/dino/scale_head_base_linear
-aws s3 cp scale_head_base_linear.tar s3://bicog-datasets/cows/scale_head_base_linear.tar
+tar -cvf scale_head_small_mlp_L1_N40.tar /workspace/dino/scale_head_small_mlp_L1_N40
+aws s3 cp scale_head_small_mlp_L1_N40.tar s3://bicog-datasets/cows/scale_head_small_mlp_L1_N40.tar
 
 
+## Train MLP head on top of ViT-base
+python -m torch.distributed.launch --nproc_per_node=4 eval_linear_scale.py \
+--arch vit_base \
+--n_last_blocks 1 \
+--patch_size 8 \
+--avgpool_patchtokens True \
+--batch_size_per_gpu 128 \
+--data_path /workspace/Downloads/Flickr_cows_train_val_sets/ \
+--num_workers 8 \
+--head_type mlp \
+--output_act softplus \
+--hidden_act relu \
+--n_hidden_layers 1 \
+--n_hidden_nodes 40 \
+--output_dir ./scale_head_base_mlp_L1_N40 \
+2>/dev/null
 
-# Destroy vast.ai instance??
+# Tar and copy results to AWS S3
+tar -cvf scale_head_base_mlp_L1_N40.tar /workspace/dino/scale_head_base_mlp_L1_N40
+aws s3 cp scale_head_base_mlp_L1_N40.tar s3://bicog-datasets/cows/scale_head_base_mlp_L1_N40.tar
 
