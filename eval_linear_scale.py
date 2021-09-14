@@ -424,6 +424,7 @@ class LinearEstimator(nn.Module):
         super(LinearEstimator, self).__init__()
         activations = {
             'relu': nn.ReLU(),
+            'gelu': nn.GELU(),
             'sigmoid': nn.Sigmoid(),
             'tanh': nn.Tanh(),
             'softplus': nn.Softplus(),
@@ -447,6 +448,7 @@ class MlpEstimator(nn.Module):
         super(MlpEstimator, self).__init__()
         activations = {
             'relu': nn.ReLU(),
+            'gelu': nn.GELU(),
             'sigmoid': nn.Sigmoid(),
             'tanh': nn.Tanh(),
             'softplus': nn.Softplus(),
