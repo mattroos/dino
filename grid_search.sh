@@ -25,7 +25,8 @@ do
             # --n_hidden_layers $n_layers \
             # --n_hidden_nodes $n_nodes
 
-            OUTPUT_NAME=scale_head_base_mlp_L"$n_layers"_N"$n_nodes"_HIDACT"$hidden_act" 
+            OUTPUT_NAME=scale_head_base_mlp_L"$n_layers"_N"$n_nodes"_HIDACT"$hidden_act"
+            mkdir ./$OUTPUT_NAME
 
             # python dummy.py \
             python -m torch.distributed.launch --nproc_per_node=4 eval_linear_scale.py \

@@ -137,9 +137,14 @@ def eval_linear(args):
         sys.exit()
 
 
-    # Create output directory, if needed
+    # Check for output directory and try to create it if it doesn't exist
     if not os.path.exists(args.output_dir):
-        os.mkdir(args.output_dir)
+        try:
+            print(f'Output directory {args.output_dir} does not exist.')
+        else:
+            pass
+            # using try, and doing nothing if it throws an exception, because seem to bomb multi-GPU training otherwise
+
 
     # set optimizer
     optimizer = torch.optim.SGD(
