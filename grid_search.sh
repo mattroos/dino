@@ -47,8 +47,8 @@ do
             echo ""
 
             # Tar and copy results to AWS S3
-            echo tar -cvf $OUTPUT_NAME.tar ./$OUTPUT_NAME
-            echo aws s3 cp $OUTPUT_NAME.tar s3://bicog-datasets/cows/$OUTPUT_NAME.tar
+            tar -cvf $OUTPUT_NAME.tar ./$OUTPUT_NAME
+            aws s3 cp $OUTPUT_NAME.tar s3://bicog-datasets/cows/$OUTPUT_NAME.tar
 
         done
     done
