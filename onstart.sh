@@ -1,4 +1,4 @@
-## Download and untar files from AWS S3
+## Set up remote machine for training of ViT and head models, using dino
 
 
 # Add some convenient aliases to .bashrc
@@ -24,8 +24,8 @@ cd ~
 mkdir .aws
 cd .aws
 echo [default] >> credentials
-echo aws_access_key_id=KEY_ID >> credentials
-echo aws_secret_access_key=SECRET_KEY >> credentials
+echo aws_access_key_id=KEY >> credentials
+echo aws_secret_access_key=KEY >> credentials
 
 
 # Test AWS credentials with ls
@@ -54,99 +54,20 @@ pip install matplotlib
 
 
 # Store github ssh public key for vast.ai
-echo SSH_KEY >> /root/.ssh/id_ed25519.pub
+echo PUBLIC_KEY >> /root/.ssh/id_ed25519.pub
+
+# Store github ssh private key, and add to ssh-agent
+echo PRIVATE_KEY >> /root/.ssh/id_ed25519
+chmod 400 /root/.ssh/id_ed25519
+
+# Start the ssh-agent in the background.
+eval "$(ssh-agent -s)"
+
+# Add your SSH private key to the ssh-agent.
+ssh-add /root/.ssh/id_ed25519
 
 
 # Download DINO code
 cd /workspace
 git clone git@github.com:mattroos/dino.git
-
-
-# Launch training
-cd /workspace/dino
-
-# ## Train transformer using SSL
-# python -m torch.distributed.launch --nproc_per_node=4 main_dino.py \
-# --arch vit_small \
-# --batch_size_per_gpu 24 \
-# --data_path /workspace/Downloads/flicker_cows_postprocessed \
-# --output_dir ./output
-
-
-# ## Train head on top of ViT-small
-# python -m torch.distributed.launch --nproc_per_node=4 eval_linear_scale.py \
-# --arch vit_small \
-# --n_last_blocks 4 \
-# --patch_size 16 \
-# --avgpool_patchtokens False \
-# --batch_size_per_gpu 128 \
-# --data_path /workspace/Downloads/Flickr_cows_train_val_sets/ \
-# --num_workers 8 \
-# --output_dir ./scale_head_small_linear \
-# 2>/dev/null
-
-# # Tar and copy results to AWS S3
-# tar -cvf scale_head_small_linear.tar /workspace/dino/scale_head_small_linear
-# aws s3 cp scale_head_small_linear.tar s3://bicog-datasets/cows/scale_head_small_linear.tar
-
-
-# ## Train head on top of ViT-base
-# python -m torch.distributed.launch --nproc_per_node=4 eval_linear_scale.py \
-# --arch vit_base \
-# --n_last_blocks 1 \
-# --patch_size 8 \
-# --avgpool_patchtokens True \
-# --batch_size_per_gpu 128 \
-# --data_path /workspace/Downloads/Flickr_cows_train_val_sets/ \
-# --num_workers 8 \
-# --output_dir ./scale_head_base_linear \
-# 2>/dev/null
-
-# # Tar and copy results to AWS S3
-# tar -cvf scale_head_base_linear.tar /workspace/dino/scale_head_base_linear
-# aws s3 cp scale_head_base_linear.tar s3://bicog-datasets/cows/scale_head_base_linear.tar
-
-
-## Train MLP head on top of ViT-small
-python -m torch.distributed.launch --nproc_per_node=4 eval_linear_scale.py \
---arch vit_small \
---n_last_blocks 4 \
---patch_size 16 \
---avgpool_patchtokens False \
---batch_size_per_gpu 256 \
---data_path /workspace/Downloads/Flickr_cows_train_val_sets/ \
---num_workers 8 \
---head_type mlp \
---output_act softplus \
---hidden_act relu \
---n_hidden_layers 1 \
---n_hidden_nodes 40 \
---output_dir ./scale_head_small_mlp_L1_N40 \
-2>/dev/null
-
-# Tar and copy results to AWS S3
-tar -cvf scale_head_small_mlp_L1_N40.tar /workspace/dino/scale_head_small_mlp_L1_N40
-aws s3 cp scale_head_small_mlp_L1_N40.tar s3://bicog-datasets/cows/scale_head_small_mlp_L1_N40.tar
-
-
-## Train MLP head on top of ViT-base
-python -m torch.distributed.launch --nproc_per_node=4 eval_linear_scale.py \
---arch vit_base \
---n_last_blocks 1 \
---patch_size 8 \
---avgpool_patchtokens True \
---batch_size_per_gpu 128 \
---data_path /workspace/Downloads/Flickr_cows_train_val_sets/ \
---num_workers 8 \
---head_type mlp \
---output_act softplus \
---hidden_act relu \
---n_hidden_layers 1 \
---n_hidden_nodes 40 \
---output_dir ./scale_head_base_mlp_L1_N40 \
-2>/dev/null
-
-# Tar and copy results to AWS S3
-tar -cvf scale_head_base_mlp_L1_N40.tar /workspace/dino/scale_head_base_mlp_L1_N40
-aws s3 cp scale_head_base_mlp_L1_N40.tar s3://bicog-datasets/cows/scale_head_base_mlp_L1_N40.tar
 
