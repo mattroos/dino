@@ -42,7 +42,7 @@ plt.ion()
 #   https://github.com/pytorch/pytorch/issues/57273
 
 MIN_SCALE = 0.666  # Mimimum image scaling
-MAX_SCALE = 1.5    # Maximum image scaling
+MAX_SCALE = 1.0    # Maximum image scaling
 MEAN = (0.485, 0.456, 0.406)  # ImageNet channel means
 STD = (0.229, 0.224, 0.225)   # ImageNet channel standard deviations
 
@@ -142,8 +142,8 @@ def eval_linear(args):
     if not os.path.exists(args.output_dir):
         try:
             print(f'Output directory {args.output_dir} does not exist.')
-        else:
-            pass
+        except:
+            print(f'Output directory {args.output_dir} does not exist.')
             # using try, and doing nothing if it throws an exception, because seem to bomb multi-GPU training otherwise
 
 
@@ -207,7 +207,7 @@ def eval_linear(args):
                 "Lowest test loss: {loss:.3e}".format(loss=best_loss))
 
 
-def scale_batch(imgs, scale_range, pad_rgb=(0, 0, 0), interp_mode=InterpolationMode.BILINEAR):
+def scale_batch(imgs, scale_range, pad_constant=0.0, interp_mode=InterpolationMode.BILINEAR):
     '''
     Randomly scales (resizes) a batch of images. Each image in the batch undergoes
     identical resizing. Input images must be square. The resizing is equal in the
@@ -227,8 +227,9 @@ def scale_batch(imgs, scale_range, pad_rgb=(0, 0, 0), interp_mode=InterpolationM
                The height must equal the width.
         scale_range - The (min, max) scaling values, where 1.0 indicates
                no scaling/resizing. Numbers > 1.0 indicate "zooming in".
-        pad_constant - Tuple of three values (0.0 to 1.0) indicating the pixel
-               color to use for padding shunken images (scale < 1.0).
+        pad_constant - Constant fill value for all three color channels. This doesn't
+               currently work as wanted, because RGB normalization has already
+               been done, so "black" has a different value for each channel.
     Outputs:
         imgs_scaled - Tensor of resized images, equal in size to that of the input images
         scale_actual - A scalar value which is the scaling size applied to the batch.
@@ -252,14 +253,14 @@ def scale_batch(imgs, scale_range, pad_rgb=(0, 0, 0), interp_mode=InterpolationM
     else:
         # Zooming out / shrinking
         hw_shrunk = int(round(hw_original * scale_approximate))
-        scale_actual = hw_original * hw_shrunk
+        scale_actual = hw_shrunk / hw_original
         if scale_actual!=1.0:
-            imgs_scaled = F.resize(hw_shrunk, interpolation=interp_mode)
+            imgs_scaled = F.resize(imgs, hw_shrunk, interpolation=interp_mode)
             hw_diff = hw_original-hw_shrunk
             top, left = torch.randint(0, hw_diff+1, (2,))
             right = hw_diff - left
             bottom = hw_diff - top
-            imgs_scaled = F.pad((left, top, right, bottom), fill=pad_rgb)
+            imgs_scaled = F.pad(imgs_scaled, (left, top, right, bottom), fill=pad_constant)
             return imgs_scaled, scale_actual
         else:
             return imgs, 1.0
@@ -303,6 +304,7 @@ def train(model, head_estimator, optimizer, loader, epoch, n, avgpool):
         #     plt.imshow(y)
         #     plt.title(scale2)
         #     # plt.waitforbuttonpress()
+        #     import pdb
         #     pdb.set_trace()
 
         # move to gpu
