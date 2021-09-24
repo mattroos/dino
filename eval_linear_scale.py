@@ -206,17 +206,64 @@ def eval_linear(args):
                 "Lowest test loss: {loss:.3e}".format(loss=best_loss))
 
 
-def scale_batch(imgs, max_scale):
+# def scale_batch(imgs, max_scale):
+#     # imgs shape is (batch, channel, height, width) and height must equal width
+#     assert imgs.shape[2]==imgs.shape[3]
+#     assert max_scale >= 1.0
+#     scale_approximate = torch.rand(1).item() * (max_scale-1.0) + 1.0
+#     hw_original = imgs.shape[2]
+#     hw_crop = int(round(hw_original / scale_approximate))
+#     scale_actual = hw_original / hw_crop
+#     top, left = torch.randint(0, hw_original-hw_crop+1, (2,))
+#     imgs_scaled = F.resized_crop(imgs, top, left, hw_crop, hw_crop, (hw_original, hw_original), InterpolationMode.BILINEAR)
+#     return imgs_scaled, scale_actual
+def scale_batch(imgs, scale_range, pad_constant=(0, 0, 0)):
+    '''
+    Randomly scales (resizes) a batch of images. Each image in the batch undergoes
+    identical resizing. Input images must be square. The resizing is equal in the
+    horizontal and vertical dimensions.
+
+    Enlargement (zoom in), scale > 1.0:
+        A crop of proportion 1/scale is taken from a random location in the image
+        and then resized to the original image size.
+
+    Shrinkage (zoom out), scale < 1.0:
+        The image is resized to scale size of the original, and then inserted into
+        a random location in an "empty" image equal in size to that of the original.
+        The empty/padded values are a constant value.
+
+    Inputs:
+        imgs - Tensor of size (batch, channel, height, width).
+               The height must equal the width.
+        scale_range - The (min, max) scaling values, where 1.0 indicates
+               no scaling/resizing. Numbers > 1.0 indicate "zooming in".
+        pad_constant - Tuple of three values (0.0 to 1.0) indicating the pixel
+               color to use for padding shunken images (scale < 1.0).
+    Outputs:
+        imgs_scaled - Tensor of resized images, equal in size to that of the input images
+        scale_actual - A scalar value which is the scaling size applied to the batch.
+    '''
     # imgs shape is (batch, channel, height, width) and height must equal width
     assert imgs.shape[2]==imgs.shape[3]
-    assert max_scale >= 1.0
-    scale_approximate = torch.rand(1).item() * (max_scale-1.0) + 1.0
+
+    min_scale, max_scale = scale_range
+    # scale_approximate = torch.rand(1).item() * (max_scale-1.0) + 1.0
+    scale_approximate = torch.rand(1).item() * (max_scale-min_scale) + min_scale
+    
     hw_original = imgs.shape[2]
-    hw_crop = int(round(hw_original / scale_approximate))
-    scale_actual = hw_original / hw_crop
-    top, left = torch.randint(0, hw_original-hw_crop+1, (2,))
-    imgs_scaled = F.resized_crop(imgs, top, left, hw_crop, hw_crop, (hw_original, hw_original), InterpolationMode.BILINEAR)
-    return imgs_scaled, scale_actual
+    if scale_approximate > 1.0:
+        # Zooming in / enlarging
+        hw_crop = int(round(hw_original / scale_approximate))
+        scale_actual = hw_original / hw_crop
+        if scale_actual!=1.0:
+            top, left = torch.randint(0, hw_original-hw_crop+1, (2,))
+            imgs_scaled = F.resized_crop(imgs, top, left, hw_crop, hw_crop, (hw_original, hw_original), InterpolationMode.BILINEAR)
+            return imgs_scaled, scale_actual
+        else:
+            return imgs, 1.0
+    else:
+        # Zooming out / shrinking
+
 
 
 def compute_loss(scale1, scale2, scale_est1, scale_est2):
