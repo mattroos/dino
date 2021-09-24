@@ -41,7 +41,8 @@ plt.ion()
 #   The 2>/dev/null tail is to get rid of warning messages from caffe. See here:
 #   https://github.com/pytorch/pytorch/issues/57273
 
-MAX_SCALE = 1.5  # Maximum image scaling (must be greater than 1.0)
+MIN_SCALE = 0.666  # Mimimum image scaling
+MAX_SCALE = 1.5    # Maximum image scaling
 MEAN = (0.485, 0.456, 0.406)  # ImageNet channel means
 STD = (0.229, 0.224, 0.225)   # ImageNet channel standard deviations
 
@@ -206,18 +207,7 @@ def eval_linear(args):
                 "Lowest test loss: {loss:.3e}".format(loss=best_loss))
 
 
-# def scale_batch(imgs, max_scale):
-#     # imgs shape is (batch, channel, height, width) and height must equal width
-#     assert imgs.shape[2]==imgs.shape[3]
-#     assert max_scale >= 1.0
-#     scale_approximate = torch.rand(1).item() * (max_scale-1.0) + 1.0
-#     hw_original = imgs.shape[2]
-#     hw_crop = int(round(hw_original / scale_approximate))
-#     scale_actual = hw_original / hw_crop
-#     top, left = torch.randint(0, hw_original-hw_crop+1, (2,))
-#     imgs_scaled = F.resized_crop(imgs, top, left, hw_crop, hw_crop, (hw_original, hw_original), InterpolationMode.BILINEAR)
-#     return imgs_scaled, scale_actual
-def scale_batch(imgs, scale_range, pad_constant=(0, 0, 0)):
+def scale_batch(imgs, scale_range, pad_rgb=(0, 0, 0), interp_mode=InterpolationMode.BILINEAR):
     '''
     Randomly scales (resizes) a batch of images. Each image in the batch undergoes
     identical resizing. Input images must be square. The resizing is equal in the
@@ -228,7 +218,7 @@ def scale_batch(imgs, scale_range, pad_constant=(0, 0, 0)):
         and then resized to the original image size.
 
     Shrinkage (zoom out), scale < 1.0:
-        The image is resized to scale size of the original, and then inserted into
+        The image is resized to scale factor of the original, and then inserted into
         a random location in an "empty" image equal in size to that of the original.
         The empty/padded values are a constant value.
 
@@ -245,25 +235,34 @@ def scale_batch(imgs, scale_range, pad_constant=(0, 0, 0)):
     '''
     # imgs shape is (batch, channel, height, width) and height must equal width
     assert imgs.shape[2]==imgs.shape[3]
-
     min_scale, max_scale = scale_range
-    # scale_approximate = torch.rand(1).item() * (max_scale-1.0) + 1.0
-    scale_approximate = torch.rand(1).item() * (max_scale-min_scale) + min_scale
-    
+    scale_approximate = torch.rand(1).item() * (max_scale-min_scale) + min_scale    
     hw_original = imgs.shape[2]
+
     if scale_approximate > 1.0:
         # Zooming in / enlarging
         hw_crop = int(round(hw_original / scale_approximate))
         scale_actual = hw_original / hw_crop
         if scale_actual!=1.0:
             top, left = torch.randint(0, hw_original-hw_crop+1, (2,))
-            imgs_scaled = F.resized_crop(imgs, top, left, hw_crop, hw_crop, (hw_original, hw_original), InterpolationMode.BILINEAR)
+            imgs_scaled = F.resized_crop(imgs, top, left, hw_crop, hw_crop, (hw_original, hw_original), interp_mode)
             return imgs_scaled, scale_actual
         else:
             return imgs, 1.0
     else:
         # Zooming out / shrinking
-
+        hw_shrunk = int(round(hw_original * scale_approximate))
+        scale_actual = hw_original * hw_shrunk
+        if scale_actual!=1.0:
+            imgs_scaled = F.resize(hw_shrunk, interpolation=interp_mode)
+            hw_diff = hw_original-hw_shrunk
+            top, left = torch.randint(0, hw_diff+1, (2,))
+            right = hw_diff - left
+            bottom = hw_diff - top
+            imgs_scaled = F.pad((left, top, right, bottom), fill=pad_rgb)
+            return imgs_scaled, scale_actual
+        else:
+            return imgs, 1.0
 
 
 def compute_loss(scale1, scale2, scale_est1, scale_est2):
@@ -289,8 +288,8 @@ def train(model, head_estimator, optimizer, loader, epoch, n, avgpool):
     header = 'Epoch: [{}]'.format(epoch)
     for (inp, target) in metric_logger.log_every(loader, 20, header):
 
-        inp1, scale1 = scale_batch(inp, MAX_SCALE)
-        inp2, scale2 = scale_batch(inp, MAX_SCALE)
+        inp1, scale1 = scale_batch(inp, (MIN_SCALE, MAX_SCALE))
+        inp2, scale2 = scale_batch(inp, (MIN_SCALE, MAX_SCALE))
 
         # for i in range(args.batch_size_per_gpu):
         #     x = np.transpose(inp1[i,:,:,:].numpy(), (1, 2, 0)) * STD + MEAN
@@ -357,8 +356,8 @@ def validate_network(val_loader, model, head_estimator, n, avgpool):
     header = 'Test:'
     for inp, target in metric_logger.log_every(val_loader, 20, header):
 
-        inp1, scale1 = scale_batch(inp, MAX_SCALE)
-        inp2, scale2 = scale_batch(inp, MAX_SCALE)
+        inp1, scale1 = scale_batch(inp, (MIN_SCALE, MAX_SCALE))
+        inp2, scale2 = scale_batch(inp, (MIN_SCALE, MAX_SCALE))
 
         # move to gpu
         inp1 = inp1.cuda(non_blocking=True)
@@ -397,8 +396,8 @@ def visualize_predictions(loader, model, head_estimator, n, avgpool):
     print('\nShowing four image pairs per batch. Click on the figure to go to next batch.\n')
     for inp, target in metric_logger.log_every(loader, 1, header):
 
-        inp1, scale1 = scale_batch(inp, MAX_SCALE)
-        inp2, scale2 = scale_batch(inp, MAX_SCALE)
+        inp1, scale1 = scale_batch(inp, (MIN_SCALE, MAX_SCALE))
+        inp2, scale2 = scale_batch(inp, (MIN_SCALE, MAX_SCALE))
         # inp1 = torch.clone(inp)
         # inp2 = torch.clone(inp)
         # scale1 = 1.0
