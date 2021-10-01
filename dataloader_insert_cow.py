@@ -7,6 +7,8 @@ import os
 from PIL import Image
 
 ## Just for development
+import pdb
+import time
 import matplotlib.pyplot as plt
 plt.ion()
 
@@ -15,6 +17,10 @@ PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented'
 COW_IMAGE_FILE_ENDSWITH = 'cow_side_seg.tiff'
 
 PATH_BACKGROUNDS = '/Data/DairyTech/Flickr_fields'
+
+
+MEAN = [[[0.485, 0.456, 0.406]]]  # ImageNet channel means, RGB
+STD = [[[0.229, 0.224, 0.225]]]   # ImageNet channel standard deviations, RGB
 
 
 class ObjectsAndBackgroundsDataset(Dataset):
@@ -56,7 +62,8 @@ class ObjectsAndBackgroundsDataset(Dataset):
         images we make the length very large, effectively infinite. And we match images
         using modulos of the index.
         '''
-        return len(np.iinfo(np.int32).max)
+        # return np.iinfo(np.int32).max
+        return 10**7  # don't make this higher than 10**8
 
     def __getitem__(self, idx):
         '''
@@ -128,7 +135,7 @@ class InsertObjectInBackground():
          resized object image.
     '''
 
-    def __init__(self, output_size, object_shrinkage):
+    def __init__(self, output_size, object_shrinkage, random_flip=True, channels_first=True, normalize=True):
         '''
         output_size: int indicating output image size (3, output_size, output_size)
                      where 3 is the number of channels.
@@ -140,6 +147,9 @@ class InsertObjectInBackground():
         '''
         self.output_size = output_size
         self.object_shrinkage = object_shrinkage
+        self.random_flip = random_flip
+        self.channels_first = channels_first
+        self.normalize = normalize
         self.crop_transform = transforms.RandomResizedCrop(224, scale=(0.5, 1.0), ratio=(0.75, 1.33))
 
     def __call__(self, sample):
@@ -155,7 +165,7 @@ class InsertObjectInBackground():
         w_new = round(w_orig * f_resize)
 
         # Resize the object
-        sample['image_object'] = sample['image_object'].resize((w_new, h_new), resample=Image.BILINEAR)
+        obj = sample['image_object'].resize((w_new, h_new), resample=Image.BILINEAR)
 
         # Also resize the mask (so we can count pixels from that).
         # Convert mask to uints of 0 and 255 in order to use PIL to resize.
@@ -164,13 +174,36 @@ class InsertObjectInBackground():
         mask = np.array(mask) > 0
         area_resized = np.sum(mask)
 
-
-        ## TODO
         # Insert masked object into random location in background
+        try:
+            top = np.random.randint(0, high=224-h_new+1)
+            left = np.random.randint(0, high=224-w_new+1)
+        except:
+            pdb.set_trace()
+        insert = np.zeros((224, 224, 3), dtype=np.uint8)
+        insert[top:top+h_new, left:left+w_new, :] = obj
+        mask_insert = np.full((224, 224), False)
+        mask_insert[top:top+h_new, left:left+w_new] = mask
+        mask_insert = np.repeat(mask_insert[:,:,None], 3, axis=2)
+        im_new = np.where(mask_insert, insert, bg)
 
+        # When batching with dataloader, numpy operations may fail, so converting to torch
+        im_new = torch.tensor(im_new)
 
-        return {'image':bg}
+        # Randomly flip, horizontally
+        if self.random_flip:
+            if np.random.choice((True, False)):
+                im_new = torch.flip(im_new, (1,))
 
+        # Normalize
+        if self.normalize:
+            im_new = (im_new/255.0 - MEAN) / STD
+
+        # Channels first
+        if self.channels_first:
+            im_new = im_new.permute(2, 0, 1)
+
+        return {'image':im_new, 'num_pixels':area_resized}
 
 
 if __name__ == "__main__":
@@ -178,22 +211,37 @@ if __name__ == "__main__":
     jitter = 0.0  # a number between 0 (no jitter) and 1 (maximum jitter)
     # transform = IndependentColorJitter(brightness=jitter, contrast=jitter, saturation=jitter, hue=jitter/2)
     transform = transforms.Compose([IndependentColorJitter(brightness=jitter, contrast=jitter, saturation=jitter, hue=jitter/2),
-                                    InsertObjectInBackground(224, 0.5)])
+                                    InsertObjectInBackground(224, 0.5, random_flip=False, channels_first=False, normalize=False)])
 
     dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS,
                                            pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                            pattern_backgrounds=None,
                                            transform=transform)
 
-    # plt.figure(1)
-    for i in range(100):
-        sample = dataset[i]
-        plt.clf()
-        plt.subplot(1,2,1)
-        plt.imshow(sample['image_object'])
-        plt.subplot(1,2,2)
-        plt.imshow(sample['image_background'])
-        import pdb
-        pdb.set_trace()
+    # # plt.figure(1)
+    # for i in range(100):
+    #     sample = dataset[i]
+    #     plt.clf()
+    #     # plt.subplot(1,2,1)
+    #     # plt.imshow(sample['image_object'])
+    #     # plt.subplot(1,2,2)
+    #     # plt.imshow(sample['image_background'])
+    #     plt.imshow(sample['image'])
+    #     plt.waitforbuttonpress()
+    #     # pdb.set_trace()
 
 
+    batch_size = 4
+    dataloader = DataLoader(dataset, batch_size=batch_size,
+                            shuffle=True, num_workers=8)
+
+    t = time.time()
+    for i_batch, batch in enumerate(dataloader):
+        print(i_batch)
+        # plt.clf()
+        # for i in range(batch_size):
+        #     plt.subplot(2, 2, i+1)
+        #     plt.imshow(batch['image'][i])
+        # plt.waitforbuttonpress()
+        # pdb.set_trace()
+    print(f'{time.time()-t} seconds.')
