@@ -13,7 +13,8 @@ import matplotlib.pyplot as plt
 plt.ion()
 
 
-PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented'
+# PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented'
+PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/train/dummy'
 COW_IMAGE_FILE_ENDSWITH = 'cow_side_seg.tiff'
 
 PATH_BACKGROUNDS = '/Data/DairyTech/Flickr_fields'
@@ -63,7 +64,8 @@ class ObjectsAndBackgroundsDataset(Dataset):
         using modulos of the index.
         '''
         # return np.iinfo(np.int32).max
-        return 10**7  # don't make this higher than 10**8
+        # return 10**7  # don't make this higher than 10**8
+        return self.n_objects
 
     def __getitem__(self, idx):
         '''
@@ -74,8 +76,10 @@ class ObjectsAndBackgroundsDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        idx_obj = idx % self.n_objects
-        idx_bg = idx % self.n_backgrounds
+        # idx_obj = idx % self.n_objects
+        # idx_bg = idx % self.n_backgrounds
+        idx_obj = idx
+        idx_bg = np.random.randint(0, high=self.n_backgrounds)
 
         # Get object image
         im_obj = Image.open(self.filenames_objects[idx_obj])
@@ -231,7 +235,6 @@ if __name__ == "__main__":
     #     plt.waitforbuttonpress()
     #     # pdb.set_trace()
 
-
     batch_size = 4
     dataloader = DataLoader(dataset, batch_size=batch_size,
                             shuffle=True, num_workers=8)
@@ -244,7 +247,9 @@ if __name__ == "__main__":
         for i in range(batch_size):
             plt.subplot(2, 2, i+1)
             plt.imshow(images[i])
-            plt.title(f'area: {areas[i]}')
+            plt.title(f'Area: {areas[i]}')
+            plt.axis('off')
         plt.waitforbuttonpress()
         # pdb.set_trace()
     print(f'{time.time()-t} seconds.')
+
