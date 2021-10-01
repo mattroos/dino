@@ -19,8 +19,8 @@ COW_IMAGE_FILE_ENDSWITH = 'cow_side_seg.tiff'
 PATH_BACKGROUNDS = '/Data/DairyTech/Flickr_fields'
 
 
-MEAN = [[[0.485, 0.456, 0.406]]]  # ImageNet channel means, RGB
-STD = [[[0.229, 0.224, 0.225]]]   # ImageNet channel standard deviations, RGB
+MEAN = torch.Tensor([[[0.485, 0.456, 0.406]]])  # ImageNet channel means, RGB
+STD = torch.Tensor([[[0.229, 0.224, 0.225]]])   # ImageNet channel standard deviations, RGB
 
 
 class ObjectsAndBackgroundsDataset(Dataset):
@@ -208,10 +208,10 @@ class InsertObjectInBackground():
 
 if __name__ == "__main__":
 
-    jitter = 0.0  # a number between 0 (no jitter) and 1 (maximum jitter)
-    # transform = IndependentColorJitter(brightness=jitter, contrast=jitter, saturation=jitter, hue=jitter/2)
+    jitter = 0.2  # a number between 0 (no jitter) and 1 (maximum jitter)
+    shrinkage = 0.5
     transform = transforms.Compose([IndependentColorJitter(brightness=jitter, contrast=jitter, saturation=jitter, hue=jitter/2),
-                                    InsertObjectInBackground(224, 0.5, random_flip=False, channels_first=False, normalize=False)])
+                                    InsertObjectInBackground(224, shrinkage, random_flip=False, channels_first=False, normalize=False)])
 
     dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS,
                                            pattern_objects=COW_IMAGE_FILE_ENDSWITH,
@@ -238,10 +238,10 @@ if __name__ == "__main__":
     t = time.time()
     for i_batch, batch in enumerate(dataloader):
         print(i_batch)
-        # plt.clf()
-        # for i in range(batch_size):
-        #     plt.subplot(2, 2, i+1)
-        #     plt.imshow(batch['image'][i])
-        # plt.waitforbuttonpress()
+        plt.clf()
+        for i in range(batch_size):
+            plt.subplot(2, 2, i+1)
+            plt.imshow(batch['image'][i])
+        plt.waitforbuttonpress()
         # pdb.set_trace()
     print(f'{time.time()-t} seconds.')
