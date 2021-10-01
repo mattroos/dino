@@ -203,7 +203,8 @@ class InsertObjectInBackground():
         if self.channels_first:
             im_new = im_new.permute(2, 0, 1)
 
-        return {'image':im_new, 'num_pixels':area_resized}
+        # return {'image':im_new, 'num_pixels':area_resized}
+        return im_new, area_resized
 
 
 if __name__ == "__main__":
@@ -238,10 +239,12 @@ if __name__ == "__main__":
     t = time.time()
     for i_batch, batch in enumerate(dataloader):
         print(i_batch)
+        images, areas = batch
         plt.clf()
         for i in range(batch_size):
             plt.subplot(2, 2, i+1)
-            plt.imshow(batch['image'][i])
+            plt.imshow(images[i])
+            plt.title(f'area: {areas[i]}')
         plt.waitforbuttonpress()
         # pdb.set_trace()
     print(f'{time.time()-t} seconds.')
