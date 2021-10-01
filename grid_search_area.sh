@@ -48,7 +48,7 @@ do
                 --avgpool_patchtokens True \
                 --batch_size_per_gpu 73 \
                 --epoch 500 \
-                --data_path_cows /workspace/Downloads/scaled_segmented_cows_train_val_sets/ \
+                --data_path_cows /workspace/Downloads/scaled_segmented_train_val_sets/ \
                 --data_path_fields /workspace/Downloads/Flickr_fields_train_val_sets/ \
                 --num_workers 8 \
                 --output_act softplus \
