@@ -58,41 +58,22 @@ def eval_linear(args):
     # ============ preparing data ... ============
     MEAN = (0.485, 0.456, 0.406)
     STD = (0.229, 0.224, 0.225)
-    # train_transform = pth_transforms.Compose([
-    #     # pth_transforms.RandomResizedCrop(224),
-    #     pth_transforms.RandomHorizontalFlip(),
-    #     pth_transforms.ToTensor(),
-    #     pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    # ])
-    # val_transform = pth_transforms.Compose([
-    #     pth_transforms.Resize(256, interpolation=3),
-    #     pth_transforms.CenterCrop(224),
-    #     pth_transforms.ToTensor(),
-    #     pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    # ])
-    
-    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, "train"), transform=train_transform)
-    # dataset_val = datasets.ImageFolder(os.path.join(args.data_path, "val"), transform=val_transform)
-    # # dataset_train = datasets.ImageFolder(args.data_path, transform=train_transform)
-    # # dataset_val = datasets.ImageFolder(args.data_path, transform=val_transform)
-    
-    PATH_BACKGROUNDS = '/Data/DairyTech/Flickr_fields_train_val_sets/'
-    PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/'
+
     COW_IMAGE_FILE_ENDSWITH = 'cow_side_seg.tiff'
     JITTER = 0.2  # a number between 0 (no JITTER) and 1 (maximum JITTER)
     SHRINKAGE = 0.5
 
     transform_train = pth_transforms.Compose([IndependentColorJitter(brightness=JITTER, contrast=JITTER, saturation=JITTER, hue=JITTER/2),
                                               InsertObjectInBackground(224, SHRINKAGE, random_flip=True, channels_first=True, normalize=True)])
-    dataset_train = ObjectsAndBackgroundsDataset(os.path.join(PATH_COWS, "train/dummy"),
-                                                 os.path.join(PATH_BACKGROUNDS, "train/dummy"),
+    dataset_train = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "train/dummy"),
+                                                 os.path.join(args.data_path_fields, "train/dummy"),
                                                  pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                                  pattern_backgrounds=None,
                                                  transform=transform_train)
     
     transform_val = InsertObjectInBackground(224, SHRINKAGE, random_flip=True, channels_first=True, normalize=True)
-    dataset_val = ObjectsAndBackgroundsDataset(os.path.join(PATH_COWS, "val/dummy"),
-                                               os.path.join(PATH_BACKGROUNDS, "val/dummy"),
+    dataset_val = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "val/dummy"),
+                                               os.path.join(args.data_path_fields, "val/dummy"),
                                                pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                                pattern_backgrounds=None,
                                                transform=transform_val)
@@ -562,7 +543,10 @@ if __name__ == '__main__':
     parser.add_argument("--dist_url", default="env://", type=str, help="""url used to set up
         distributed training; see https://pytorch.org/docs/stable/distributed.html""")
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
-    parser.add_argument('--data_path', default='/path/to/imagenet/', type=str)
+    
+    parser.add_argument('--data_path_fields', default='/workspace/Downloads/Flickr_fields_train_val_sets/', type=str)
+    parser.add_argument('--data_path_cows', default='/workspace/Downloads/scaled_segmented_train_val_sets/', type=str)
+
     parser.add_argument('--num_workers', default=10, type=int, help='Number of data loading workers per GPU.')
     parser.add_argument('--val_freq', default=1, type=int, help="Epoch frequency for validation.")
     parser.add_argument('--output_dir', default=".", help='Path to save logs and checkpoints')
@@ -580,7 +564,6 @@ if __name__ == '__main__':
     eval_linear(args)
 
 
-
 # Command to visualize validation data:
 # python eval_linear_scale.py --data_path /Data/DairyTech/Flickr_cows_train_val_sets/ --num_workers 8 --view True
 
@@ -588,13 +571,15 @@ if __name__ == '__main__':
 # python eval_linear_cale.py --data_path /Data/DairyTech/scaled_sets/test_sample/ --num_workers 8 --view True
 
 
-# python eval_linear_area.py \
+# python eval_area.py \
 # --arch vit_small \
 # --n_last_blocks 4 \
 # --patch_size 16 \
 # --avgpool_patchtokens False \
 # --batch_size_per_gpu 73 \
 # --epochs 500 \
+# --data_path_fields /Data/DairyTech/Flickr_fields_train_val_sets/ \
+# --data_path_cows /home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/ \
 # --num_workers 8 \
 # --head_type mlp \
 # --output_act softplus \
@@ -603,6 +588,13 @@ if __name__ == '__main__':
 # --n_hidden_nodes 40 \
 # --output_dir ./area_head_temp \
 # 2>/dev/null
+
+# --data_path_fields /Data/DairyTech/Flickr_fields_train_val_sets/ \
+# --data_path_cows /home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/ \
+
+# --data_path_fields /workspace/Downloads/Flickr_fields_train_val_sets/ \
+# --data_path_cows /workspace/Downloads/scaled_segmented_train_val_sets/ \
+
 
 
 # python eval_linear_scale.py \
