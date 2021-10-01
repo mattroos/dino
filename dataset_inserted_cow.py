@@ -13,17 +13,6 @@ import matplotlib.pyplot as plt
 plt.ion()
 
 
-# PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented'
-PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/train/dummy'
-COW_IMAGE_FILE_ENDSWITH = 'cow_side_seg.tiff'
-
-PATH_BACKGROUNDS = '/Data/DairyTech/Flickr_fields'
-
-
-MEAN = torch.Tensor([[[0.485, 0.456, 0.406]]])  # ImageNet channel means, RGB
-STD = torch.Tensor([[[0.229, 0.224, 0.225]]])   # ImageNet channel standard deviations, RGB
-
-
 class ObjectsAndBackgroundsDataset(Dataset):
     '''
     Images of segemented objects paired with background images
@@ -84,10 +73,9 @@ class ObjectsAndBackgroundsDataset(Dataset):
         # Get object image
         im_obj = Image.open(self.filenames_objects[idx_obj])
 
-        # Create object segmentation mask from image stored as numpy array
-        np_filename = self.filenames_objects[idx_obj][:-4]  + 'npy'
-        np_obj = np.load(np_filename)
-        mask = np.logical_not(np.all(np_obj==-1.0, axis=2))
+        # Load object segmentation mask
+        np_filename = self.filenames_objects[idx_obj][:-5]  + '_mask.npy'
+        mask = np.load(np_filename)
 
         # Get background image
         im_bg = Image.open(self.filenames_backgrounds[idx_bg])
@@ -138,6 +126,8 @@ class InsertObjectInBackground():
          original object image and (2) the number of object pixels in the
          resized object image.
     '''
+    MEAN = torch.Tensor([[[0.485, 0.456, 0.406]]])  # ImageNet channel means, RGB
+    STD = torch.Tensor([[[0.229, 0.224, 0.225]]])   # ImageNet channel standard deviations, RGB
 
     def __init__(self, output_size, object_shrinkage, random_flip=True, channels_first=True, normalize=True):
         '''
@@ -201,7 +191,7 @@ class InsertObjectInBackground():
 
         # Normalize
         if self.normalize:
-            im_new = (im_new/255.0 - MEAN) / STD
+            im_new = (im_new/255.0 - self.MEAN) / self.STD
 
         # Channels first
         if self.channels_first:
@@ -212,6 +202,11 @@ class InsertObjectInBackground():
 
 
 if __name__ == "__main__":
+
+    PATH_BACKGROUNDS = '/Data/DairyTech/Flickr_fields'
+    # PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented'
+    PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/train/dummy'
+    COW_IMAGE_FILE_ENDSWITH = 'cow_side_seg.tiff'
 
     jitter = 0.2  # a number between 0 (no jitter) and 1 (maximum jitter)
     shrinkage = 0.5
