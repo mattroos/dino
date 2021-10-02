@@ -19,11 +19,14 @@ class ObjectsAndBackgroundsDataset(Dataset):
     into which they can be inserted.
     '''
 
-    def __init__(self, path_objects, path_backgrounds, pattern_objects=None, pattern_backgrounds=None, transform=None):
+    def __init__(self, path_objects, path_backgrounds, pattern_objects=None,
+                 pattern_backgrounds=None, transform=None, shrinkages_per_object=1):
         random.seed(0)
 
         # Any transforms will be applied to object and background images independently
         self.transform = transform
+
+        self.shrinkages_per_object = shrinkages_per_object
 
         # Get list of object files that contain pattern
         self.path_objects = path_objects
@@ -48,26 +51,18 @@ class ObjectsAndBackgroundsDataset(Dataset):
 
     def __len__(self):
         '''
-        Because we want to effectively randomly match object images with background
-        images we make the length very large, effectively infinite. And we match images
-        using modulos of the index.
+        Use the number of object images as the length. The background images is always
+        randomly chosen.
+        If using a fixed list of shrinkage sizes, then the length is the number of
+        object images times the number of shrinkage sizes.
         '''
-        # return np.iinfo(np.int32).max
-        # return 10**7  # don't make this higher than 10**8
-        return self.n_objects
+        return self.n_objects * self.shrinkages_per_object
 
     def __getitem__(self, idx):
-        '''
-        Because we want to effectively randomly match object images with background
-        images we make the length very large, effectively infinite. And we match images
-        using modulos of the index.
-        '''
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        # idx_obj = idx % self.n_objects
-        # idx_bg = idx % self.n_backgrounds
-        idx_obj = idx
+        idx_obj = idx//self.shrinkages_per_object  # Repeat an object image shrinkages_per_object times
         idx_bg = np.random.randint(0, high=self.n_backgrounds)
 
         # Get object image
@@ -133,11 +128,16 @@ class InsertObjectInBackground():
         '''
         output_size: int indicating output image size (3, output_size, output_size)
                      where 3 is the number of channels.
-        object_shrinkage: factor indicating how small the object may be resized
+
+        object_shrinkage: Factor indicating how small the object may be resized
                           to, relative to the output_size. E.g., if output_size
                           is 1000 and object_shrinkage is 0.5 then the largest
                           dimension of the object will be shrunk to between
                           0.5*1000==500 and 1000.
+
+                          OR: If object_shrinkage is an iterable, cycle through the
+                          values, using them as the shrinkage factor rather than
+                          a random value.
         '''
         self.output_size = output_size
         self.object_shrinkage = object_shrinkage
@@ -145,6 +145,9 @@ class InsertObjectInBackground():
         self.channels_first = channels_first
         self.normalize = normalize
         self.crop_transform = transforms.RandomResizedCrop(224, scale=(0.5, 1.0), ratio=(0.75, 1.33))
+        self.shrink_counter = 0  # to keep track of which shrinkage to use, if object_shrinkage is an iterable
+        if hasattr(self.object_shrinkage, '__iter__'):
+            self.n_shrinks = len(self.object_shrinkage)
 
     def __call__(self, sample):
         bg = self.crop_transform(sample['image_background'])
@@ -153,7 +156,11 @@ class InsertObjectInBackground():
         # Determine the new size of the object image
         h_orig = sample['image_object'].height
         w_orig = sample['image_object'].width
-        f_shrink = np.random.uniform(self.object_shrinkage, 1.0)
+        if hasattr(self.object_shrinkage, '__iter__'):
+            f_shrink = self.object_shrinkage[self.shrink_counter%self.n_shrinks]
+            self.shrink_counter += 1
+        else:
+            f_shrink = np.random.uniform(self.object_shrinkage, 1.0)
         f_resize = 224/max(h_orig, w_orig) * f_shrink
         h_new = round(h_orig * f_resize)
         w_new = round(w_orig * f_resize)
@@ -169,11 +176,8 @@ class InsertObjectInBackground():
         area_resized = np.sum(mask)
 
         # Insert masked object into random location in background
-        try:
-            top = np.random.randint(0, high=224-h_new+1)
-            left = np.random.randint(0, high=224-w_new+1)
-        except:
-            pdb.set_trace()
+        top = np.random.randint(0, high=224-h_new+1)
+        left = np.random.randint(0, high=224-w_new+1)
         insert = np.zeros((224, 224, 3), dtype=np.uint8)
         insert[top:top+h_new, left:left+w_new, :] = obj
         mask_insert = np.full((224, 224), False)
@@ -204,19 +208,27 @@ class InsertObjectInBackground():
 if __name__ == "__main__":
 
     PATH_BACKGROUNDS = '/Data/DairyTech/Flickr_fields'
-    # PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented'
     PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/train/dummy'
     COW_IMAGE_FILE_ENDSWITH = 'cow_side_seg.tiff'
 
     jitter = 0.2  # a number between 0 (no jitter) and 1 (maximum jitter)
     shrinkage = 0.5
+    # shrinkage = [0.5, 0.666, 0.834, 1.0]
+    if hasattr(shrinkage, '__iter__'):
+        shrinkages_per_object = len(shrinkage)
+        shuffle = False
+    else:
+        shrinkages_per_object = 1
+        shuffle = True
+
     transform = transforms.Compose([IndependentColorJitter(brightness=jitter, contrast=jitter, saturation=jitter, hue=jitter/2),
-                                    InsertObjectInBackground(224, shrinkage, random_flip=False, channels_first=False, normalize=False)])
+                                    InsertObjectInBackground(224, shrinkage, random_flip=True, channels_first=False, normalize=False)])
 
     dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS,
                                            pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                            pattern_backgrounds=None,
-                                           transform=transform)
+                                           transform=transform,
+                                           shrinkages_per_object=shrinkages_per_object)
 
     # # plt.figure(1)
     # for i in range(100):
@@ -232,7 +244,7 @@ if __name__ == "__main__":
 
     batch_size = 4
     dataloader = DataLoader(dataset, batch_size=batch_size,
-                            shuffle=True, num_workers=8)
+                            shuffle=shuffle, num_workers=8)
 
     t = time.time()
     for i_batch, batch in enumerate(dataloader):
@@ -242,9 +254,9 @@ if __name__ == "__main__":
         for i in range(batch_size):
             plt.subplot(2, 2, i+1)
             plt.imshow(images[i])
-            plt.title(f'Area: {areas[i]}')
+            plt.title(f'Area: {areas[i]/1000:0.2f}')
             plt.axis('off')
-        plt.waitforbuttonpress()
-        # pdb.set_trace()
+        # plt.waitforbuttonpress()
+        pdb.set_trace()
     print(f'{time.time()-t} seconds.')
 

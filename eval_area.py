@@ -71,12 +71,23 @@ def eval_linear(args):
                                                  pattern_backgrounds=None,
                                                  transform=transform_train)
     
-    transform_val = InsertObjectInBackground(224, SHRINKAGE, random_flip=True, channels_first=True, normalize=True)
-    dataset_val = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "val/dummy"),
-                                               os.path.join(args.data_path_fields, "val/dummy"),
-                                               pattern_objects=COW_IMAGE_FILE_ENDSWITH,
-                                               pattern_backgrounds=None,
-                                               transform=transform_val)
+    if args.view:
+        SHRINKAGE_FIXED = [0.5, 0.666, 0.834, 1.0]
+        transform_val = InsertObjectInBackground(224, SHRINKAGE_FIXED, random_flip=True, channels_first=True, normalize=True)
+        dataset_val = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "val/dummy"),
+                                                   os.path.join(args.data_path_fields, "val/dummy"),
+                                                   pattern_objects=COW_IMAGE_FILE_ENDSWITH,
+                                                   pattern_backgrounds=None,
+                                                   transform=transform_val,
+                                                   shrinkages_per_object=4)
+    else:
+        transform_val = InsertObjectInBackground(224, SHRINKAGE, random_flip=True, channels_first=True, normalize=True)
+        dataset_val = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "val/dummy"),
+                                                   os.path.join(args.data_path_fields, "val/dummy"),
+                                                   pattern_objects=COW_IMAGE_FILE_ENDSWITH,
+                                                   pattern_backgrounds=None,
+                                                   transform=transform_val)
+
 
     sampler = torch.utils.data.distributed.DistributedSampler(dataset_train)
 
@@ -136,12 +147,91 @@ def eval_linear(args):
             os.path.join(args.output_dir, "checkpoint.pth.tar"),
             state_dict=head_estimator,
         )
-        # Visualize
+        # Visualize, and repeat multiple times to collect targets and predictions, to generate stats
         assert args.view_dataset in ['train', 'val']
-        if args.view_dataset=='train':
-            visualize_predictions(train_loader, model, head_estimator, args.n_last_blocks, args.avgpool_patchtokens)
-        else:
-            visualize_predictions(val_loader, model, head_estimator, args.n_last_blocks, args.avgpool_patchtokens)
+        targets_all = np.array([])
+        area_est_all = np.array([])
+        for i in range(10):
+            if args.view_dataset=='train':
+                targets, area_est = visualize_predictions(train_loader, model, head_estimator, args.n_last_blocks, args.avgpool_patchtokens)
+            else:
+                targets, area_est = visualize_predictions(val_loader, model, head_estimator, args.n_last_blocks, args.avgpool_patchtokens)
+            targets_all = np.concatenate((targets_all, targets))
+            area_est_all = np.concatenate((area_est_all, area_est))
+
+        # Show target and prediction areas
+        plt.figure(2, figsize=(10.5, 4.5))
+        plt.clf()
+        fs = 12  # font size for title and axis labels
+
+        plt.subplot(1, 2, 1)
+        plt.plot(targets_all/1000, area_est_all/1000, '.')
+        low = np.min(np.concatenate((targets_all/1000, area_est_all/1000)))
+        high = np.max(np.concatenate((targets_all/1000, area_est_all/1000)))
+        plt.axis('square')
+        plt.axis([low, high, low, high])
+        plt.plot([low, high], [low, high], 'k:')
+        plt.xlabel('True area (pixels/1000)', fontsize=fs)
+        plt.ylabel('Predicted area (pixels/1000)', fontsize=fs)
+        plt.title('Area Predictions')
+        plt.grid(True)
+
+        # Show MAPE, grouped by true area
+        targets = np.unique(targets_all)
+        mapes = np.zeros_like(targets)
+        for i, t in enumerate(targets):
+            idx = np.where(targets_all==t)
+            mapes[i] = np.mean(np.abs(area_est_all[idx] - targets_all[idx])/targets_all[idx])
+        plt.subplot(1, 2, 2)
+        plt.plot(targets/1000, 100*mapes, 'o')
+        # plt.axis('square')
+        plt.xlabel('True area (pixels/1000)', fontsize=fs)
+        plt.ylabel('Mean Absolute Prediction Error (%)', fontsize=fs)
+        plt.title('Average Area Prediction Error')
+        plt.grid(True)
+
+        plt.subplots_adjust(wspace=0.3)
+
+
+        # Plot what results might look like if we assume weight is proportional to area**(3/2)?
+        targets_all = targets_all**1.5
+        area_est_all = area_est_all**1.5
+        plt.figure(3, figsize=(10.5, 4.5))
+        plt.clf()
+        fs = 12  # font size for title and axis labels
+
+        plt.subplot(1, 2, 1)
+        plt.plot(targets_all/1000, area_est_all/1000, '.')
+        low = np.min(np.concatenate((targets_all/1000, area_est_all/1000)))
+        high = np.max(np.concatenate((targets_all/1000, area_est_all/1000)))
+        plt.axis('square')
+        plt.axis([low, high, low, high])
+        plt.plot([low, high], [low, high], 'k:')
+        plt.xlabel('Speculated true weight (pixels^1.5/1000)', fontsize=fs)
+        plt.ylabel('Predicted weight (pixels^1.5/1000)', fontsize=fs)
+        plt.title('Weight Predictions (speculated)')
+        plt.grid(True)
+
+        # Show MAPE, grouped by true area
+        targets = np.unique(targets_all)
+        mapes = np.zeros_like(targets)
+        for i, t in enumerate(targets):
+            idx = np.where(targets_all==t)
+            mapes[i] = np.mean(np.abs(area_est_all[idx] - targets_all[idx])/targets_all[idx])
+        plt.subplot(1, 2, 2)
+        plt.plot(targets/1000, 100*mapes, 'o')
+        # plt.axis('square')
+        plt.xlabel('Speculated true weight (pixels^1.5/1000)', fontsize=fs)
+        plt.ylabel('Mean Absolute Prediction Error (%)', fontsize=fs)
+        plt.title('Average Weight Prediction Error (spectulated)')
+        plt.grid(True)
+
+        plt.subplots_adjust(wspace=0.3)
+
+
+        import pdb
+        pdb.set_trace()
+
         sys.exit()
 
 
@@ -212,81 +302,6 @@ def eval_linear(args):
 
     print("Training of the supervised estimator on frozen features completed.\n"
                 "Lowest test loss: {loss:.3e}".format(loss=best_loss))
-
-
-def scale_batch(imgs, scale_range, pad_constant=0.0, interp_mode=InterpolationMode.BILINEAR):
-    '''
-    Randomly scales (resizes) a batch of images. Each image in the batch undergoes
-    identical resizing. Input images must be square. The resizing is equal in the
-    horizontal and vertical dimensions.
-
-    Enlargement (zoom in), scale > 1.0:
-        A crop of proportion 1/scale is taken from a random location in the image
-        and then resized to the original image size.
-
-    Shrinkage (zoom out), scale < 1.0:
-        The image is resized to scale factor of the original, and then inserted into
-        a random location in an "empty" image equal in size to that of the original.
-        The empty/padded values are a constant value.
-
-    Inputs:
-        imgs - Tensor of size (batch, channel, height, width).
-               The height must equal the width.
-        scale_range - The (min, max) scaling values, where 1.0 indicates
-               no scaling/resizing. Numbers > 1.0 indicate "zooming in".
-        pad_constant - Constant fill value for all three color channels. This doesn't
-               currently work as wanted, because RGB normalization has already
-               been done, so "black" has a different value for each channel.
-    Outputs:
-        imgs_scaled - Tensor of resized images, equal in size to that of the input images
-        scale_actual - A scalar value which is the scaling size applied to the batch.
-    '''
-    # imgs shape is (batch, channel, height, width) and height must equal width
-    assert imgs.shape[2]==imgs.shape[3]
-    min_scale, max_scale = scale_range
-    scale_approximate = torch.rand(1).item() * (max_scale-min_scale) + min_scale    
-    hw_original = imgs.shape[2]
-
-    if scale_approximate > 1.0:
-        # Zooming in / enlarging
-        hw_crop = int(round(hw_original / scale_approximate))
-        scale_actual = hw_original / hw_crop
-        if scale_actual!=1.0:
-            top, left = torch.randint(0, hw_original-hw_crop+1, (2,))
-            imgs_scaled = F.resized_crop(imgs, top, left, hw_crop, hw_crop, (hw_original, hw_original), interp_mode)
-            return imgs_scaled, scale_actual
-        else:
-            return imgs, 1.0
-    else:
-        # Zooming out / shrinking
-        hw_shrunk = int(round(hw_original * scale_approximate))
-        scale_actual = hw_shrunk / hw_original
-        if scale_actual!=1.0:
-            imgs_scaled = F.resize(imgs, hw_shrunk, interpolation=interp_mode)
-            hw_diff = hw_original-hw_shrunk
-            top, left = torch.randint(0, hw_diff+1, (2,))
-            right = hw_diff - left
-            bottom = hw_diff - top
-            imgs_scaled = F.pad(imgs_scaled, (left, top, right, bottom), fill=pad_constant)
-            return imgs_scaled, scale_actual
-        else:
-            return imgs, 1.0
-
-
-def compute_loss(scale1, scale2, scale_est1, scale_est2):
-    # The head must produce an estimate of the scale. However, there is no meaningful
-    # units of scale, so the loss function is based on the ratio of the scales for
-    # two images that are otherwise identical. Taking the log of the ratio will give
-    # ground truth values that are symmetrically centered about zero.
-    # What is the proper loss fuction, however? MSE? The distribution is reminiscent
-    # of Gaussian, so something specialized for that? Or perhaps something that
-    # weights outliers so the model doesn't get stuck just guessing the same scale
-    # value for each image?
-    bias = 0.0
-    ratio_pred = (scale_est1+bias)/(scale_est2+bias)
-    ratio_gt = torch.full(scale_est1.shape, (scale1+bias)/(scale2+bias)).cuda()
-    loss = torch.nn.functional.mse_loss(ratio_pred, ratio_gt)
-    return loss
 
 
 def MAPELoss(target, output):
@@ -385,62 +400,47 @@ def visualize_predictions(loader, model, head_estimator, n, avgpool):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Visualize:'
     print('\nShowing four image pairs per batch. Click on the figure to go to next batch.\n')
+    targets_all = np.array([])
+    area_est_all = np.array([])
     for inp, target in metric_logger.log_every(loader, 1, header):
 
-        inp1, scale1 = scale_batch(inp, (MIN_SCALE, MAX_SCALE))
-        inp2, scale2 = scale_batch(inp, (MIN_SCALE, MAX_SCALE))
-        # inp1 = torch.clone(inp)
-        # inp2 = torch.clone(inp)
-        # scale1 = 1.0
-        # scale2 = 1.0
-
         # move to gpu
-        inp1 = inp1.cuda(non_blocking=True)
-        inp2 = inp2.cuda(non_blocking=True)
+        inp = inp.cuda(non_blocking=True)
 
         # forward
         outputs = []
-        for inp in [inp1, inp2]:
-            if "vit" in args.arch:
-                intermediate_output = model.get_intermediate_layers(inp, n)
-                output = [x[:, 0] for x in intermediate_output]
-                if avgpool:
-                    output.append(torch.mean(intermediate_output[-1][:, 1:], dim=1))
-                output = torch.cat(output, dim=-1)
-            else:
-                output = model(inp)
-            outputs.append(output)
-        out1, out2 = outputs
-        scale_est1 = head_estimator(out1).cpu().numpy()[:,0]
-        scale_est2 = head_estimator(out2).cpu().numpy()[:,0]
+        if "vit" in args.arch:
+            intermediate_output = model.get_intermediate_layers(inp, n)
+            output = [x[:, 0] for x in intermediate_output]
+            if avgpool:
+                output.append(torch.mean(intermediate_output[-1][:, 1:], dim=1))
+            output = torch.cat(output, dim=-1)
+        else:
+            output = model(inp)
+        area_est = head_estimator(output).cpu().numpy()[:, 0]
 
         # Convert back to numpy and 0.0 to 1.0 colorscale
-        inp1 = inp1.cpu().numpy()
-        inp2 = inp2.cpu().numpy()
-        inp1 = inp1 * np.reshape(STD, (1, 3, 1, 1)) + np.reshape(MEAN, (1, 3, 1, 1))
-        inp2 = inp2 * np.reshape(STD, (1, 3, 1, 1)) + np.reshape(MEAN, (1, 3, 1, 1))
-        inp1 = np.transpose(inp1, (0, 2, 3, 1))
-        inp2 = np.transpose(inp2, (0, 2, 3, 1))
-        inp1 = np.clip(inp1, 0, 1)  # values may yet bet out of range due to numerical precision, so clip
-        inp2 = np.clip(inp2, 0, 1)  # values may yet bet out of range due to numerical precision, so clip
+        inp = inp.cpu().numpy()
+        inp = inp * np.reshape(STD, (1, 3, 1, 1)) + np.reshape(MEAN, (1, 3, 1, 1))
+        inp = np.transpose(inp, (0, 2, 3, 1))
+        inp = np.clip(inp, 0, 1)  # values may yet bet out of range due to numerical precision, so clip
 
-        # Plot n_pairs images pairs from this batch
-        n_pairs = 4
-        # n_pairs = 11
+        n_images = 4
         fig = plt.figure(1, figsize=(6, 10))
         plt.clf()
-        fig.suptitle(f'scale1={scale1:0.2f}, scale2={scale2:0.2f}, ratio={scale1/scale2:0.2f}')
-        for i in range(n_pairs):
-            plt.subplot(n_pairs, 2, 2*i+1)
-            plt.imshow(inp1[i])
-            plt.title(f'pred={scale_est1[i]:0.2f}, ratio={scale_est1[i]/scale_est2[i]:0.2f}')
+        for i in range(n_images):
+            plt.subplot(n_images, 1, i+1)
+            plt.imshow(inp[i])
+            plt.title(f'area = {target[i]/1000:0.2f}, pred={area_est[i]:0.2f}')
             plt.axis('off')
-            plt.subplot(n_pairs, 2, 2*i+2)
-            plt.imshow(inp2[i])
-            plt.title(f'pred={scale_est2[i]:0.2f}, ratio={scale_est1[i]/scale_est2[i]:0.2f}')
-            plt.axis('off')
-        # print(scale_est1)
-        plt.waitforbuttonpress()
+        plt.pause(0.01)
+        # plt.waitforbuttonpress()
+
+        targets_all = np.concatenate((targets_all, target.cpu().numpy()))
+        area_est_all = np.concatenate((area_est_all, area_est*1000))
+
+    # Return the target and predictions, for stat generation
+    return targets_all, area_est_all
 
 
 class LinearClassifier(nn.Module):
@@ -559,7 +559,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_hidden_nodes', default=40, type=int, help='Number of nodes per hidden layers, if using MLP head model')
 
     parser.add_argument('--view', default=False, type=utils.bool_flag, help='Load trained linear head and visualize results')
-    parser.add_argument('--view_dataset', default='val', type=str, help='If visualizing results, specifies whether to use "train" or "va" dataset')
+    parser.add_argument('--view_dataset', default='val', type=str, help='If visualizing results, specifies whether to use "train" or "val" dataset')
     args = parser.parse_args()
     eval_linear(args)
 
@@ -597,15 +597,16 @@ if __name__ == '__main__':
 
 
 
-# python eval_linear_scale.py \
+# python eval_area.py \
 # --arch vit_base \
 # --n_last_blocks 1 \
 # --patch_size 8 \
 # --avgpool_patchtokens True \
-# --batch_size_per_gpu 32 \
-# --data_path /Data/DairyTech/Flickr_cows_train_val_sets/ \
+# --batch_size_per_gpu 4 \
+# --data_path_fields /Data/DairyTech/Flickr_fields_train_val_sets/ \
+# --data_path_cows /home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/ \
 # --num_workers 8 \
-# --output_dir ./scale_head_base_linear \
+# --output_dir ./area_head_base_linear \
 # --view True
 
 
