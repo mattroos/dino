@@ -66,11 +66,11 @@ def eval_linear(args):
     # Create two temporary datasets, to find out max cow image size...
     dataset_train = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "train/dummy"),
                                                  os.path.join(args.data_path_fields, "train/dummy"),
-                                                 arg.csv_weight_filename,
+                                                 args.csv_weight_filename,
                                                  pattern_objects=COW_IMAGE_FILE_ENDSWITH)
     dataset_val = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "val/dummy"),
                                                os.path.join(args.data_path_fields, "val/dummy"),
-                                               arg.csv_weight_filename,
+                                               args.csv_weight_filename,
                                                pattern_objects=COW_IMAGE_FILE_ENDSWITH)
     max_obj_length = max(dataset_train._get_max_object_length(), dataset_val._get_max_object_length())
 
@@ -80,7 +80,7 @@ def eval_linear(args):
                                               InsertObjectInBackground(224, max_obj_length, SHRINKAGE, random_flip=True, channels_first=True, normalize=True)])
     dataset_train = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "train/dummy"),
                                                  os.path.join(args.data_path_fields, "train/dummy"),
-                                                 arg.csv_weight_filename,
+                                                 args.csv_weight_filename,
                                                  pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                                  pattern_backgrounds=None,
                                                  transform=transform_train)
@@ -90,7 +90,7 @@ def eval_linear(args):
         transform_val = InsertObjectInBackground(224, max_obj_length, SHRINKAGE_FIXED, random_flip=True, channels_first=True, normalize=True)
         dataset_val = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "val/dummy"),
                                                    os.path.join(args.data_path_fields, "val/dummy"),
-                                                   arg.csv_weight_filename,
+                                                   args.csv_weight_filename,
                                                    pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                                    pattern_backgrounds=None,
                                                    transform=transform_val,
@@ -99,7 +99,7 @@ def eval_linear(args):
         transform_val = InsertObjectInBackground(224, max_obj_length, SHRINKAGE, random_flip=True, channels_first=True, normalize=True)
         dataset_val = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "val/dummy"),
                                                    os.path.join(args.data_path_fields, "val/dummy"),
-                                                   arg.csv_weight_filename,
+                                                   args.csv_weight_filename,
                                                    pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                                    pattern_backgrounds=None,
                                                    transform=transform_val)
