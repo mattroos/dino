@@ -276,7 +276,7 @@ if __name__ == "__main__":
     transform = transforms.Compose([IndependentColorJitter(brightness=jitter, contrast=jitter, saturation=jitter, hue=jitter/2),
                                     InsertObjectInBackground(224, max_obj_length, shrinkage, random_flip=True, channels_first=False, normalize=False)])
 
-    dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS, WEIGHT_CSV
+    dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS, WEIGHT_CSV,
                                            pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                            pattern_backgrounds=None,
                                            transform=transform,
