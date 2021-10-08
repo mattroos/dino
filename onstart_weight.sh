@@ -51,6 +51,7 @@ tar -xvf scaled_segmented_train_val_sets.tar
 pip install torch
 pip install timm
 pip install matplotlib
+pip install pandas
 
 
 # Store github ssh public key for vast.ai
