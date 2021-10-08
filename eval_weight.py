@@ -66,9 +66,11 @@ def eval_linear(args):
     # Create two temporary datasets, to find out max cow image size...
     dataset_train = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "train/dummy"),
                                                  os.path.join(args.data_path_fields, "train/dummy"),
+                                                 arg.csv_weight_filename,
                                                  pattern_objects=COW_IMAGE_FILE_ENDSWITH)
     dataset_val = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "val/dummy"),
                                                os.path.join(args.data_path_fields, "val/dummy"),
+                                               arg.csv_weight_filename,
                                                pattern_objects=COW_IMAGE_FILE_ENDSWITH)
     max_obj_length = max(dataset_train._get_max_object_length(), dataset_val._get_max_object_length())
 
@@ -78,6 +80,7 @@ def eval_linear(args):
                                               InsertObjectInBackground(224, max_obj_length, SHRINKAGE, random_flip=True, channels_first=True, normalize=True)])
     dataset_train = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "train/dummy"),
                                                  os.path.join(args.data_path_fields, "train/dummy"),
+                                                 arg.csv_weight_filename,
                                                  pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                                  pattern_backgrounds=None,
                                                  transform=transform_train)
@@ -87,6 +90,7 @@ def eval_linear(args):
         transform_val = InsertObjectInBackground(224, max_obj_length, SHRINKAGE_FIXED, random_flip=True, channels_first=True, normalize=True)
         dataset_val = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "val/dummy"),
                                                    os.path.join(args.data_path_fields, "val/dummy"),
+                                                   arg.csv_weight_filename,
                                                    pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                                    pattern_backgrounds=None,
                                                    transform=transform_val,
@@ -95,6 +99,7 @@ def eval_linear(args):
         transform_val = InsertObjectInBackground(224, max_obj_length, SHRINKAGE, random_flip=True, channels_first=True, normalize=True)
         dataset_val = ObjectsAndBackgroundsDataset(os.path.join(args.data_path_cows, "val/dummy"),
                                                    os.path.join(args.data_path_fields, "val/dummy"),
+                                                   arg.csv_weight_filename,
                                                    pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                                    pattern_backgrounds=None,
                                                    transform=transform_val)
@@ -578,24 +583,24 @@ if __name__ == '__main__':
 # python eval_linear_cale.py --data_path /Data/DairyTech/scaled_sets/test_sample/ --num_workers 8 --view True
 
 
-# python eval_weight.py \
-# --arch vit_small \
-# --n_last_blocks 4 \
-# --patch_size 16 \
-# --avgpool_patchtokens False \
-# --batch_size_per_gpu 73 \
-# --epochs 500 \
-# --data_path_fields /Data/DairyTech/Flickr_fields_train_val_sets/ \
-# --data_path_cows /home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/ \
-# --csv_weight_filename /home/mroos/Data/DairyTech/video_info_2021-Feb-Mar.csv \
-# --num_workers 8 \
-# --head_type mlp \
-# --output_act linear \
-# --hidden_act relu \
-# --n_hidden_layers 1 \
-# --n_hidden_nodes 40 \
-# --loss mape \
-# --output_dir ./weight_head_temp \
+python eval_weight.py \
+--arch vit_small \
+--n_last_blocks 4 \
+--patch_size 16 \
+--avgpool_patchtokens False \
+--batch_size_per_gpu 73 \
+--epochs 500 \
+--data_path_fields /workspace/Downloads/Flickr_fields_train_val_sets/ \
+--data_path_cows /workspace/Downloads/scaled_segmented_train_val_sets/ \
+--csv_weight_filename /workspace/Downloads/video_info_2021-Feb-Mar.csv \
+--num_workers 8 \
+--head_type mlp \
+--output_act linear \
+--hidden_act relu \
+--n_hidden_layers 1 \
+--n_hidden_nodes 40 \
+--loss mape \
+--output_dir ./weight_head_temp \
 # 2>/dev/null
 
 # --data_path_fields /Data/DairyTech/Flickr_fields_train_val_sets/ \
