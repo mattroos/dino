@@ -60,7 +60,7 @@ do
                     --hidden_act $hidden_act \
                     --n_hidden_layers $n_layers \
                     --n_hidden_nodes $n_nodes \
-                    --loss mape $loss \
+                    --loss $loss \
                     --output_dir ./$OUTPUT_NAME \
                     2>/dev/null
 
