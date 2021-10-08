@@ -51,6 +51,7 @@ do
                     --avgpool_patchtokens True \
                     --batch_size_per_gpu 73 \
                     --epoch 500 \
+                    --lr 0.0001 \
                     --data_path_cows /workspace/Downloads/scaled_segmented_train_val_sets/ \
                     --data_path_fields /workspace/Downloads/Flickr_fields_train_val_sets/ \
                     --csv_weight_filename /workspace/Downloads/video_info_2021-Feb-Mar.csv \
