@@ -44,7 +44,7 @@ do
                     mkdir ./$OUTPUT_NAME
 
                     # python dummy.py \
-                    python -m torch.distributed.launch --nproc_per_node=4 eval_area.py \
+                    python -m torch.distributed.launch --nproc_per_node=4 eval_weight.py \
                     --arch vit_base \
                     --n_last_blocks 1 \
                     --patch_size 8 \
