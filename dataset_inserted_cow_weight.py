@@ -20,7 +20,7 @@ class ObjectsAndBackgroundsDataset(Dataset):
     into which they can be inserted.
     '''
 
-    def __init__(self, path_objects, path_backgrounds, pattern_objects=None,
+    def __init__(self, path_objects, path_backgrounds, weight_csv, pattern_objects=None,
                  pattern_backgrounds=None, transform=None, shrinkages_per_object=1):
         random.seed(0)
 
@@ -42,7 +42,7 @@ class ObjectsAndBackgroundsDataset(Dataset):
         self.n_backgrounds = len(self.filenames_backgrounds)
 
         # Get object weights from csv file
-        self.weights = self._get_weights('/home/mroos/Data/DairyTech/video_info_2021-Feb-Mar.csv')
+        self.weights = self._get_weights(weight_csv)
 
     def _get_filename_list(self, path, pattern):
         filenames = os.listdir(path)
@@ -236,19 +236,19 @@ if __name__ == "__main__":
 
     PATH_BACKGROUNDS = '/Data/DairyTech/Flickr_fields_train_val_sets/train/dummy'
     COW_IMAGE_FILE_ENDSWITH = 'cow_side_seg.tiff'
-
+    WEIGHT_CSV = '/home/mroos/Data/DairyTech/video_info_2021-Feb-Mar.csv'
 
     # Create both a train and val dataset, and then determine the maximum cow image
     # length across both datasets.
     PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/train/dummy'
-    dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS,
+    dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS, WEIGHT_CSV,
                                            pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                            pattern_backgrounds=None,
                                            transform=None,
                                            shrinkages_per_object=1)
     max_train = dataset._get_max_object_length()
     PATH_COWS = '/home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/val/dummy'
-    dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS,
+    dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS, WEIGHT_CSV,
                                            pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                            pattern_backgrounds=None,
                                            transform=None,
@@ -276,7 +276,7 @@ if __name__ == "__main__":
     transform = transforms.Compose([IndependentColorJitter(brightness=jitter, contrast=jitter, saturation=jitter, hue=jitter/2),
                                     InsertObjectInBackground(224, max_obj_length, shrinkage, random_flip=True, channels_first=False, normalize=False)])
 
-    dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS,
+    dataset = ObjectsAndBackgroundsDataset(PATH_COWS, PATH_BACKGROUNDS, WEIGHT_CSV
                                            pattern_objects=COW_IMAGE_FILE_ENDSWITH,
                                            pattern_backgrounds=None,
                                            transform=transform,
