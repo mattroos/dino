@@ -53,6 +53,7 @@ do
                     --epoch 500 \
                     --data_path_cows /workspace/Downloads/scaled_segmented_train_val_sets/ \
                     --data_path_fields /workspace/Downloads/Flickr_fields_train_val_sets/ \
+                    --csv_weight_filename /workspace/Downloads/video_info_2021-Feb-Mar.csv \
                     --num_workers 8 \
                     --output_act linear \
                     --head_type $type \

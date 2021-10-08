@@ -549,6 +549,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--data_path_fields', default='/workspace/Downloads/Flickr_fields_train_val_sets/', type=str)
     parser.add_argument('--data_path_cows', default='/workspace/Downloads/scaled_segmented_train_val_sets/', type=str)
+    parser.add_argument('--csv_weight_filename', default='/workspace/Downloads/video_info_2021-Feb-Mar.csv', type=str)
 
     parser.add_argument('--num_workers', default=10, type=int, help='Number of data loading workers per GPU.')
     parser.add_argument('--val_freq', default=1, type=int, help="Epoch frequency for validation.")
@@ -586,9 +587,10 @@ if __name__ == '__main__':
 # --epochs 500 \
 # --data_path_fields /Data/DairyTech/Flickr_fields_train_val_sets/ \
 # --data_path_cows /home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/ \
+# --csv_weight_filename /home/mroos/Data/DairyTech/video_info_2021-Feb-Mar.csv \
 # --num_workers 8 \
 # --head_type mlp \
-# --output_act softplus \
+# --output_act linear \
 # --hidden_act relu \
 # --n_hidden_layers 1 \
 # --n_hidden_nodes 40 \
@@ -598,9 +600,11 @@ if __name__ == '__main__':
 
 # --data_path_fields /Data/DairyTech/Flickr_fields_train_val_sets/ \
 # --data_path_cows /home/mroos/Data/DairyTech/labelme/scaled_segmented_train_val_sets/ \
+# --csv_weight_filename /home/mroos/Data/DairyTech/video_info_2021-Feb-Mar.csv \
 
 # --data_path_fields /workspace/Downloads/Flickr_fields_train_val_sets/ \
 # --data_path_cows /workspace/Downloads/scaled_segmented_train_val_sets/ \
+# --csv_weight_filename /workspace/Downloads/video_info_2021-Feb-Mar.csv \
 
 
 # python eval_weight.py \
