@@ -31,7 +31,7 @@ import vision_transformer as vits
 import torchvision.transforms.functional as F
 from torchvision.transforms.functional import InterpolationMode
 
-from dataset_inserted_cow import ObjectsAndBackgroundsDataset, IndependentColorJitter, InsertObjectInBackground
+from dataset_inserted_cow_area import ObjectsAndBackgroundsDataset, IndependentColorJitter, InsertObjectInBackground
 
 import numpy as np
 import matplotlib.pyplot as plt
